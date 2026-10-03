@@ -165,21 +165,22 @@ function StudyOrganizerWorkspace() {
     null
   );
 
-  // Listen to Firebase Auth state & restore active session
+  // Listen to Firebase Auth state & restore active session only if explicitly signed in via AuthScreen
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      if (currentUser) {
-        const session = buildSessionFromFirebaseUser(currentUser);
+      const savedLocal = getSavedActiveLocalSession();
+      if (currentUser && savedLocal && savedLocal.uid === currentUser.uid) {
+        const session = buildSessionFromFirebaseUser(
+          currentUser,
+          savedLocal.nickname
+        );
         setActiveSession(session);
         saveActiveLocalSession(session);
+      } else if (savedLocal && !savedLocal.isFirebaseAuth) {
+        setActiveSession(savedLocal);
       } else {
-        const savedLocal = getSavedActiveLocalSession();
-        if (savedLocal && !savedLocal.isFirebaseAuth) {
-          setActiveSession(savedLocal);
-        } else {
-          setActiveSession(null);
-        }
+        setActiveSession(null);
       }
       setIsAuthReady(true);
     });
