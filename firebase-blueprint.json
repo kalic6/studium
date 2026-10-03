@@ -1,0 +1,404 @@
+{
+  "entities": {
+    "Semester": {
+      "title": "Semester",
+      "description": "Represents an academic semester owned by a student.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the authenticated owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Name of the semester (e.g. 1. semestr).",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "academicYear": {
+          "type": "string",
+          "description": "Academic year label (e.g. 2026/2027).",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "period": {
+          "type": "string",
+          "description": "Semester period (Podzim or Jaro).",
+          "enum": ["Podzim", "Jaro", "Celoroční"]
+        },
+        "order": {
+          "type": "integer",
+          "description": "Display sort order of the semester."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": ["ownerId", "title", "academicYear", "period", "order", "createdAt", "updatedAt"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Represents a university course within a semester.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the authenticated owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "semesterId": {
+          "type": "string",
+          "description": "ID of the parent semester document.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "code": {
+          "type": "string",
+          "description": "Course code (e.g. AI001, ISKB02).",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "name": {
+          "type": "string",
+          "description": "Full title of the course.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "teacher": {
+          "type": "string",
+          "description": "Name of the instructor or lecturer.",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "room": {
+          "type": "string",
+          "description": "Classroom, building, or online room.",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "scheduleSummary": {
+          "type": "string",
+          "description": "Weekly time slot or block schedule note.",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "completionType": {
+          "type": "string",
+          "description": "Method of course completion.",
+          "enum": ["Zkouška", "Zápočet", "Kolokvium", "Klasifikovaný zápočet"]
+        },
+        "credits": {
+          "type": "integer",
+          "description": "ECTS credit value of the course."
+        },
+        "isCompleted": {
+          "type": "boolean",
+          "description": "Whether the course has been fulfilled and completed."
+        },
+        "order": {
+          "type": "integer",
+          "description": "Sort order inside the semester."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "semesterId",
+        "code",
+        "name",
+        "teacher",
+        "room",
+        "scheduleSummary",
+        "completionType",
+        "credits",
+        "isCompleted",
+        "order",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CourseDate": {
+      "title": "CourseDate",
+      "description": "Represents a scheduled date, lecture, block session, or exam date for a course.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the authenticated owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "semesterId": {
+          "type": "string",
+          "description": "ID of the parent semester.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "courseId": {
+          "type": "string",
+          "description": "ID of the parent course.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Label or description of the scheduled session/exam.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "date": {
+          "type": "string",
+          "description": "ISO date or formatted date-time string.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "time": {
+          "type": "string",
+          "description": "Time range (e.g. 10:00 - 11:40).",
+          "minLength": 0,
+          "maxLength": 60
+        },
+        "room": {
+          "type": "string",
+          "description": "Room for this specific date.",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "teacher": {
+          "type": "string",
+          "description": "Instructor for this specific date.",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "category": {
+          "type": "string",
+          "description": "Type of course date.",
+          "enum": ["Přednáška", "Seminář", "Zkouška", "Bloková výuka", "Konzultace", "Jiné"]
+        },
+        "isCompleted": {
+          "type": "boolean",
+          "description": "Whether this session/exam date has been attended or completed."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "semesterId",
+        "courseId",
+        "title",
+        "date",
+        "time",
+        "room",
+        "teacher",
+        "category",
+        "isCompleted",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CourseTask": {
+      "title": "CourseTask",
+      "description": "Represents an assignment or task to submit for a course.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the authenticated owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "semesterId": {
+          "type": "string",
+          "description": "ID of the parent semester.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "courseId": {
+          "type": "string",
+          "description": "ID of the parent course.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Task title.",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "Deadline date string.",
+          "minLength": 0,
+          "maxLength": 60
+        },
+        "description": {
+          "type": "string",
+          "description": "Additional details or submission instructions.",
+          "minLength": 0,
+          "maxLength": 2000
+        },
+        "priority": {
+          "type": "string",
+          "description": "Priority level.",
+          "enum": ["Nízká", "Střední", "Vysoká"]
+        },
+        "isCompleted": {
+          "type": "boolean",
+          "description": "Whether the assignment has been submitted/completed."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "semesterId",
+        "courseId",
+        "title",
+        "dueDate",
+        "description",
+        "priority",
+        "isCompleted",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CourseTopic": {
+      "title": "CourseTopic",
+      "description": "Represents a syllabus topic with a processing checkbox and study notes.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the authenticated owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "semesterId": {
+          "type": "string",
+          "description": "ID of the parent semester.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "courseId": {
+          "type": "string",
+          "description": "ID of the parent course.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Topic title or syllabus heading.",
+          "minLength": 1,
+          "maxLength": 250
+        },
+        "weekLabel": {
+          "type": "string",
+          "description": "Optional week or lecture number label (e.g. 1. týden).",
+          "minLength": 0,
+          "maxLength": 60
+        },
+        "isProcessed": {
+          "type": "boolean",
+          "description": "Checkbox indicating whether the topic has been processed/studied."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Study notes / lecture write-up (zápis k probíranému tématu).",
+          "minLength": 0,
+          "maxLength": 20000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "semesterId",
+        "courseId",
+        "title",
+        "weekLabel",
+        "isProcessed",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/semesters/{semesterId}": {
+      "schema": { "$ref": "#/entities/Semester" },
+      "description": "Academic semesters created by the user."
+    },
+    "/courses/{courseId}": {
+      "schema": { "$ref": "#/entities/Course" },
+      "description": "Courses belonging to a specific semester."
+    },
+    "/courseDates/{dateId}": {
+      "schema": { "$ref": "#/entities/CourseDate" },
+      "description": "Scheduled dates, lectures, seminars, and exam terms for a course."
+    },
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/CourseTask" },
+      "description": "Assignments and tasks to submit for a course."
+    },
+    "/topics/{topicId}": {
+      "schema": { "$ref": "#/entities/CourseTopic" },
+      "description": "Syllabus topics with a processing checkbox and detailed study notes (zápisy)."
+    }
+  }
+}

@@ -1,0 +1,334 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // 0. GLOBAL SAFETY NET (Default Deny)
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // 1. PRIMITIVE HELPERS
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // =========================================================================
+    // 2. VALIDATION BLUEPRINTS (Anti-Update-Gap & Volumetric Boundaries)
+    // =========================================================================
+    function isValidSemester(data) {
+      return data.keys().hasAll([
+          'ownerId', 'title', 'academicYear', 'period', 'order', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'title', 'academicYear', 'period', 'order', 'createdAt', 'updatedAt'
+        ]) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.academicYear is string && data.academicYear.size() >= 1 && data.academicYear.size() <= 40 &&
+        data.period is string && data.period.size() >= 1 && data.period.size() <= 20 &&
+        data.period in ['Podzim', 'Jaro', 'Celoroční'] &&
+        data.order is int && data.order >= 0 && data.order <= 1000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCourse(data) {
+      return data.keys().hasAll([
+          'ownerId', 'semesterId', 'code', 'name', 'teacher', 'room',
+          'scheduleSummary', 'completionType', 'credits', 'isCompleted',
+          'order', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'semesterId', 'code', 'name', 'teacher', 'room',
+          'scheduleSummary', 'completionType', 'credits', 'isCompleted',
+          'order', 'createdAt', 'updatedAt'
+        ]) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.semesterId is string && data.semesterId.size() >= 1 && data.semesterId.size() <= 128 &&
+        data.semesterId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.code is string && data.code.size() >= 1 && data.code.size() <= 30 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 200 &&
+        data.teacher is string && data.teacher.size() <= 200 &&
+        data.room is string && data.room.size() <= 120 &&
+        data.scheduleSummary is string && data.scheduleSummary.size() <= 200 &&
+        data.completionType is string && data.completionType.size() >= 1 && data.completionType.size() <= 40 &&
+        data.completionType in ['Zkouška', 'Zápočet', 'Kolokvium', 'Klasifikovaný zápočet'] &&
+        data.credits is int && data.credits >= 0 && data.credits <= 60 &&
+        data.isCompleted is bool &&
+        data.order is int && data.order >= 0 && data.order <= 1000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCourseDate(data) {
+      return data.keys().hasAll([
+          'ownerId', 'semesterId', 'courseId', 'title', 'date', 'time',
+          'room', 'teacher', 'category', 'isCompleted', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'semesterId', 'courseId', 'title', 'date', 'time',
+          'room', 'teacher', 'category', 'isCompleted', 'createdAt', 'updatedAt'
+        ]) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.semesterId is string && data.semesterId.size() >= 1 && data.semesterId.size() <= 128 &&
+        data.semesterId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.courseId is string && data.courseId.size() >= 1 && data.courseId.size() <= 128 &&
+        data.courseId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.date is string && data.date.size() >= 1 && data.date.size() <= 60 &&
+        data.time is string && data.time.size() <= 60 &&
+        data.room is string && data.room.size() <= 120 &&
+        data.teacher is string && data.teacher.size() <= 200 &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 40 &&
+        data.category in ['Přednáška', 'Seminář', 'Zkouška', 'Bloková výuka', 'Konzultace', 'Jiné'] &&
+        data.isCompleted is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCourseTask(data) {
+      return data.keys().hasAll([
+          'ownerId', 'semesterId', 'courseId', 'title', 'dueDate',
+          'description', 'priority', 'isCompleted', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'semesterId', 'courseId', 'title', 'dueDate',
+          'description', 'priority', 'isCompleted', 'createdAt', 'updatedAt'
+        ]) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.semesterId is string && data.semesterId.size() >= 1 && data.semesterId.size() <= 128 &&
+        data.semesterId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.courseId is string && data.courseId.size() >= 1 && data.courseId.size() <= 128 &&
+        data.courseId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 250 &&
+        data.dueDate is string && data.dueDate.size() <= 60 &&
+        data.description is string && data.description.size() <= 2000 &&
+        data.priority is string && data.priority.size() >= 1 && data.priority.size() <= 30 &&
+        data.priority in ['Nízká', 'Střední', 'Vysoká'] &&
+        data.isCompleted is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCourseTopic(data) {
+      return data.keys().hasAll([
+          'ownerId', 'semesterId', 'courseId', 'title', 'weekLabel',
+          'isProcessed', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'semesterId', 'courseId', 'title', 'weekLabel',
+          'isProcessed', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.semesterId is string && data.semesterId.size() >= 1 && data.semesterId.size() <= 128 &&
+        data.semesterId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.courseId is string && data.courseId.size() >= 1 && data.courseId.size() <= 128 &&
+        data.courseId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 250 &&
+        data.weekLabel is string && data.weekLabel.size() <= 60 &&
+        data.isProcessed is bool &&
+        data.notes is string && data.notes.size() <= 20000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // 3. RELATIONAL MASTER GATE HELPERS
+    // =========================================================================
+    function isParentSemesterOwner(semesterId) {
+      return exists(/databases/$(database)/documents/semesters/$(semesterId)) &&
+        get(/databases/$(database)/documents/semesters/$(semesterId)).data.ownerId == request.auth.uid;
+    }
+
+    function isParentCourseOwner(courseId, semesterId) {
+      return exists(/databases/$(database)/documents/courses/$(courseId)) &&
+        get(/databases/$(database)/documents/courses/$(courseId)).data.ownerId == request.auth.uid &&
+        get(/databases/$(database)/documents/courses/$(courseId)).data.semesterId == semesterId;
+    }
+
+    // =========================================================================
+    // 4. COLLECTION RULES
+    // =========================================================================
+
+    match /semesters/{semesterId} {
+      allow get: if isVerified() && isValidId(semesterId) && existing().ownerId == request.auth.uid;
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerified() &&
+        isValidId(semesterId) &&
+        isValidSemester(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerified() &&
+        isValidId(semesterId) &&
+        isValidSemester(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action: Edit semester metadata
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'academicYear', 'period', 'order', 'updatedAt'])
+        );
+
+      allow delete: if isVerified() && isValidId(semesterId) && existing().ownerId == request.auth.uid;
+    }
+
+    match /courses/{courseId} {
+      allow get: if isVerified() && isValidId(courseId) && existing().ownerId == request.auth.uid;
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerified() &&
+        isValidId(courseId) &&
+        isValidCourse(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isParentSemesterOwner(incoming().semesterId);
+
+      allow update: if isVerified() &&
+        isValidId(courseId) &&
+        isValidCourse(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().semesterId == existing().semesterId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action: Toggle completion state
+          incoming().diff(existing()).affectedKeys().hasOnly(['isCompleted', 'updatedAt']) ||
+          // Action: Update course details, teacher, room, schedule, or completion status
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'code', 'name', 'teacher', 'room', 'scheduleSummary',
+            'completionType', 'credits', 'isCompleted', 'order', 'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() && isValidId(courseId) && existing().ownerId == request.auth.uid;
+    }
+
+    match /courseDates/{dateId} {
+      allow get: if isVerified() && isValidId(dateId) && existing().ownerId == request.auth.uid;
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerified() &&
+        isValidId(dateId) &&
+        isValidCourseDate(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isParentCourseOwner(incoming().courseId, incoming().semesterId);
+
+      allow update: if isVerified() &&
+        isValidId(dateId) &&
+        isValidCourseDate(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().semesterId == existing().semesterId &&
+        incoming().courseId == existing().courseId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action: Toggle attendance/completion of date
+          incoming().diff(existing()).affectedKeys().hasOnly(['isCompleted', 'updatedAt']) ||
+          // Action: Edit date details
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'date', 'time', 'room', 'teacher', 'category', 'isCompleted', 'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() && isValidId(dateId) && existing().ownerId == request.auth.uid;
+    }
+
+    match /tasks/{taskId} {
+      allow get: if isVerified() && isValidId(taskId) && existing().ownerId == request.auth.uid;
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerified() &&
+        isValidId(taskId) &&
+        isValidCourseTask(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isParentCourseOwner(incoming().courseId, incoming().semesterId);
+
+      allow update: if isVerified() &&
+        isValidId(taskId) &&
+        isValidCourseTask(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().semesterId == existing().semesterId &&
+        incoming().courseId == existing().courseId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action: Toggle task submission checkbox
+          incoming().diff(existing()).affectedKeys().hasOnly(['isCompleted', 'updatedAt']) ||
+          // Action: Edit task details
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'dueDate', 'description', 'priority', 'isCompleted', 'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() && isValidId(taskId) && existing().ownerId == request.auth.uid;
+    }
+
+    match /topics/{topicId} {
+      allow get: if isVerified() && isValidId(topicId) && existing().ownerId == request.auth.uid;
+      allow list: if isVerified() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerified() &&
+        isValidId(topicId) &&
+        isValidCourseTopic(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isParentCourseOwner(incoming().courseId, incoming().semesterId);
+
+      allow update: if isVerified() &&
+        isValidId(topicId) &&
+        isValidCourseTopic(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().semesterId == existing().semesterId &&
+        incoming().courseId == existing().courseId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action: Toggle topic processed checkbox
+          incoming().diff(existing()).affectedKeys().hasOnly(['isProcessed', 'updatedAt']) ||
+          // Action: Update study notes (zápis k probíranému tématu)
+          incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'isProcessed', 'updatedAt']) ||
+          // Action: Full topic edit
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'weekLabel', 'isProcessed', 'notes', 'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() && isValidId(topicId) && existing().ownerId == request.auth.uid;
+    }
+  }
+}

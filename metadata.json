@@ -1,0 +1,6 @@
+{
+  "name": "Studijní deník IS",
+  "description": "Privátní aplikace pro organizaci vysokoškolského studia, sledování semestrů, předmětů, termínů, úkolů k odevzdání, témat ke zpracování a studijních zápisů.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
