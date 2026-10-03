@@ -26,7 +26,6 @@ import {
   Check,
   FileText,
   LogOut,
-  RotateCcw,
   X,
   Save,
 } from 'lucide-react';
@@ -54,11 +53,8 @@ import {
 } from './types';
 import {
   DEFAULT_SEMESTER_ID,
+  LEGACY_PREFILLED_COURSE_PREFIXES,
   getInitialSemesters,
-  getInitialCourses,
-  getInitialTopics,
-  getInitialTasks,
-  getInitialDates,
 } from './defaultData';
 import {
   ActiveStudentSession,
@@ -228,12 +224,11 @@ function StudyOrganizerWorkspace() {
     }
   }, [activeSession?.uid, semesters, courses, topics, tasks, dates]);
 
-  // Seed initial 1st semester & screenshot courses into Firestore for a new authenticated user
+  // Seed only an empty 1st semester into Firestore for a new authenticated user
   const seedUserDatabase = async (uid: string) => {
     setIsSeedingCloud(true);
     try {
       const initialSem = getInitialSemesters(uid)[0];
-      // Step 1: Create parent semester document first so relational rules pass
       try {
         await setDoc(doc(db, 'semesters', initialSem.id), {
           ownerId: uid,
@@ -246,84 +241,6 @@ function StudyOrganizerWorkspace() {
         });
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `semesters/${initialSem.id}`);
-      }
-
-      // Step 2: Create all 8 courses from the screenshot
-      const initialCoursesList = getInitialCourses(uid, initialSem.id);
-      try {
-        const courseBatch = writeBatch(db);
-        for (const c of initialCoursesList) {
-          courseBatch.set(doc(db, 'courses', c.id), {
-            ownerId: uid,
-            semesterId: c.semesterId,
-            code: c.code,
-            name: c.name,
-            teacher: c.teacher,
-            room: c.room,
-            scheduleSummary: c.scheduleSummary,
-            completionType: c.completionType,
-            credits: c.credits,
-            isCompleted: c.isCompleted,
-            order: c.order,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-        await courseBatch.commit();
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'courses');
-      }
-
-      // Step 3: Create initial topics, tasks, and course dates
-      try {
-        const childrenBatch = writeBatch(db);
-        for (const t of getInitialTopics(uid, initialSem.id)) {
-          childrenBatch.set(doc(db, 'topics', t.id), {
-            ownerId: uid,
-            semesterId: t.semesterId,
-            courseId: t.courseId,
-            title: t.title,
-            weekLabel: t.weekLabel,
-            isProcessed: t.isProcessed,
-            notes: t.notes,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-        for (const task of getInitialTasks(uid, initialSem.id)) {
-          childrenBatch.set(doc(db, 'tasks', task.id), {
-            ownerId: uid,
-            semesterId: task.semesterId,
-            courseId: task.courseId,
-            title: task.title,
-            dueDate: task.dueDate,
-            description: task.description,
-            workNotes: task.workNotes || '',
-            priority: task.priority,
-            isCompleted: task.isCompleted,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-        for (const d of getInitialDates(uid, initialSem.id)) {
-          childrenBatch.set(doc(db, 'courseDates', d.id), {
-            ownerId: uid,
-            semesterId: d.semesterId,
-            courseId: d.courseId,
-            title: d.title,
-            date: d.date,
-            time: d.time,
-            room: d.room,
-            teacher: d.teacher,
-            category: d.category,
-            isCompleted: d.isCompleted,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-        await childrenBatch.commit();
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'topics/tasks/courseDates');
       }
     } finally {
       setIsSeedingCloud(false);
@@ -339,6 +256,9 @@ function StudyOrganizerWorkspace() {
 
     setIsLoadingUserCloud(true);
     let hasCheckedEmpty = false;
+    const resetFlagKey = `studijni_denik_cloud_courses_cleared_v2_${user.uid}`;
+    const shouldWipeExistingOnce =
+      localStorage.getItem(resetFlagKey) !== 'done';
 
     const semQuery = query(
       collection(db, 'semesters'),
@@ -372,7 +292,34 @@ function StudyOrganizerWorkspace() {
     );
     const unsubCourses = onSnapshot(
       coursesQuery,
-      (snapshot) => {
+      async (snapshot) => {
+        const docsToDelete = snapshot.docs.filter(
+          (d) =>
+            shouldWipeExistingOnce ||
+            LEGACY_PREFILLED_COURSE_PREFIXES.some((prefix) =>
+              d.id.startsWith(prefix)
+            )
+        );
+
+        if (shouldWipeExistingOnce) {
+          try {
+            localStorage.setItem(resetFlagKey, 'done');
+          } catch {
+            // ignore storage errors
+          }
+        }
+
+        if (docsToDelete.length > 0) {
+          try {
+            const batch = writeBatch(db);
+            docsToDelete.forEach((d) => batch.delete(doc(db, 'courses', d.id)));
+            await batch.commit();
+          } catch (err) {
+            handleFirestoreError(err, OperationType.DELETE, 'courses');
+          }
+          return;
+        }
+
         const loaded: Course[] = snapshot.docs
           .map((d) => ({ id: d.id, ...(d.data() as Omit<Course, 'id'>) }))
           .sort((a, b) => a.order - b.order || a.code.localeCompare(b.code));
@@ -387,7 +334,17 @@ function StudyOrganizerWorkspace() {
     );
     const unsubTopics = onSnapshot(
       topicsQuery,
-      (snapshot) => {
+      async (snapshot) => {
+        if (shouldWipeExistingOnce && snapshot.docs.length > 0) {
+          try {
+            const batch = writeBatch(db);
+            snapshot.docs.forEach((d) => batch.delete(doc(db, 'topics', d.id)));
+            await batch.commit();
+          } catch {
+            // ignore
+          }
+          return;
+        }
         const loaded: CourseTopic[] = snapshot.docs.map((d) => ({
           id: d.id,
           ...(d.data() as Omit<CourseTopic, 'id'>),
@@ -403,7 +360,17 @@ function StudyOrganizerWorkspace() {
     );
     const unsubTasks = onSnapshot(
       tasksQuery,
-      (snapshot) => {
+      async (snapshot) => {
+        if (shouldWipeExistingOnce && snapshot.docs.length > 0) {
+          try {
+            const batch = writeBatch(db);
+            snapshot.docs.forEach((d) => batch.delete(doc(db, 'tasks', d.id)));
+            await batch.commit();
+          } catch {
+            // ignore
+          }
+          return;
+        }
         const loaded: CourseTask[] = snapshot.docs
           .map((d) => ({ id: d.id, ...(d.data() as Omit<CourseTask, 'id'>) }))
           .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
@@ -418,7 +385,19 @@ function StudyOrganizerWorkspace() {
     );
     const unsubDates = onSnapshot(
       datesQuery,
-      (snapshot) => {
+      async (snapshot) => {
+        if (shouldWipeExistingOnce && snapshot.docs.length > 0) {
+          try {
+            const batch = writeBatch(db);
+            snapshot.docs.forEach((d) =>
+              batch.delete(doc(db, 'courseDates', d.id))
+            );
+            await batch.commit();
+          } catch {
+            // ignore
+          }
+          return;
+        }
         const loaded: CourseDate[] = snapshot.docs
           .map((d) => ({ id: d.id, ...(d.data() as Omit<CourseDate, 'id'>) }))
           .sort((a, b) => a.date.localeCompare(b.date));
@@ -907,54 +886,6 @@ function StudyOrganizerWorkspace() {
       setTasks((prev) => prev.filter((t) => t.courseId !== courseId));
       setDates((prev) => prev.filter((d) => d.courseId !== courseId));
       setCourses((prev) => prev.filter((c) => c.id !== courseId));
-    }
-  };
-
-  const handleRestoreDefaultCourses = async () => {
-    if (!activeSemester) return;
-    const existingCodes = new Set(
-      semesterCourses.map((c) => c.code.toUpperCase())
-    );
-    const defaults = getInitialCourses(
-      currentOwnerId,
-      activeSemester.id
-    ).filter((d) => !existingCodes.has(d.code.toUpperCase()));
-
-    if (defaults.length === 0) return;
-
-    if (isCloudVerified && user) {
-      try {
-        const batch = writeBatch(db);
-        for (const c of defaults) {
-          const id = generateSafeId(`course_${c.code}`);
-          batch.set(doc(db, 'courses', id), {
-            ownerId: user.uid,
-            semesterId: activeSemester.id,
-            code: c.code,
-            name: c.name,
-            teacher: c.teacher,
-            room: c.room,
-            scheduleSummary: c.scheduleSummary,
-            completionType: c.completionType,
-            credits: c.credits,
-            isCompleted: c.isCompleted,
-            order: c.order,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-        await batch.commit();
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, 'courses');
-      }
-    } else {
-      setCourses((prev) => [
-        ...prev,
-        ...defaults.map((c) => ({
-          ...c,
-          id: generateSafeId(`course_${c.code}`),
-        })),
-      ]);
     }
   };
 
@@ -1944,18 +1875,6 @@ function StudyOrganizerWorkspace() {
                           className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:border-[#003865]"
                         />
                       </div>
-
-                      {semesterCourses.length < 8 && (
-                        <button
-                          type="button"
-                          onClick={handleRestoreDefaultCourses}
-                          title="Doplnit výchozí předměty 1. semestru ze screenshotu"
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 whitespace-nowrap"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          Výchozí předměty
-                        </button>
-                      )}
                     </div>
                   </div>
 
@@ -1964,28 +1883,18 @@ function StudyOrganizerWorkspace() {
                     <div className="bg-white border border-slate-200 rounded-md p-8 text-center space-y-2">
                       <p className="text-sm text-slate-600">
                         {semesterCourses.length === 0
-                          ? 'V tomto semestru zatím nejsou žádné předměty.'
+                          ? 'V tomto semestru zatím nejsou žádné předměty. Přidejte si svůj první předmět.'
                           : 'Žádný předmět neodpovídá zvolenému filtru.'}
                       </p>
                       <div className="flex items-center justify-center gap-3 pt-1">
                         <button
                           type="button"
                           onClick={() => setShowNewCourseModal(true)}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#003865] rounded-md"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#003865] rounded-md hover:bg-[#002848] transition-colors"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           Přidat předmět
                         </button>
-                        {semesterCourses.length === 0 && (
-                          <button
-                            type="button"
-                            onClick={handleRestoreDefaultCourses}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            Nahrát předměty 1. semestru
-                          </button>
-                        )}
                       </div>
                     </div>
                   ) : (

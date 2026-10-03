@@ -131,11 +131,16 @@ export function getSavedActiveLocalSession(): ActiveStudentSession | null {
 
 export function getUserDataStorageKey(uid: string): string {
   const safeUid = uid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-  return `studijni_denik_userdata_v1_${safeUid}`;
+  return `studijni_denik_userdata_v2_${safeUid}`;
 }
 
 export function loadUserStudyData(uid: string): UserStudyDataBundle {
   try {
+    const safeUid = uid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+    // Remove legacy v1 data that contained pre-seeded courses
+    localStorage.removeItem(`studijni_denik_userdata_v1_${safeUid}`);
+    localStorage.removeItem('studijni_denik_local_v2');
+
     const key = getUserDataStorageKey(uid);
     const saved = localStorage.getItem(key);
     if (saved) {

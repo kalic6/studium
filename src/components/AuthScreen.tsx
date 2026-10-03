@@ -402,7 +402,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               </div>
 
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Každému zaregistrovanému studentovi se vytvoří vlastní oddělený prostor s předměty 1. semestru, které si může libovolně upravovat.
+                Každému zaregistrovanému studentovi se automaticky vytvoří prázdný 1. semestr, do kterého si může přidávat vlastní předměty, termíny, úkoly a zápisy.
               </p>
 
               <button
