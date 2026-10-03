@@ -93,7 +93,7 @@ interface CourseAccordionItemProps {
   onDeleteDate: (dateId: string) => void;
 }
 
-type ActiveSubTab = 'topics' | 'tasks' | 'dates' | 'settings';
+type ActiveSubTab = 'topics' | 'tasks' | 'dates';
 
 export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
   course,
@@ -116,6 +116,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
   onDeleteDate,
 }) => {
   const [activeTab, setActiveTab] = useState<ActiveSubTab>('topics');
+  const [showCourseDetailsEditor, setShowCourseDetailsEditor] = useState(false);
 
   // Selected topic for note writing (zápis k probíranému tématu)
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(
@@ -174,7 +175,16 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
   const [newDateRoom, setNewDateRoom] = useState(course.room);
   const [newDateTeacher, setNewDateTeacher] = useState(course.teacher);
 
-  // Course settings form state
+  // Edit course date inline state
+  const [editingDateId, setEditingDateId] = useState<string | null>(null);
+  const [editDateTitle, setEditDateTitle] = useState('');
+  const [editDateCategory, setEditDateCategory] = useState<DateCategory>('Přednáška');
+  const [editDateValue, setEditDateValue] = useState('');
+  const [editDateTime, setEditDateTime] = useState('');
+  const [editDateRoom, setEditDateRoom] = useState('');
+  const [editDateTeacher, setEditDateTeacher] = useState('');
+
+  // Course details form state (Always accessible at the top of the expanded course)
   const [courseCode, setCourseCode] = useState(course.code);
   const [courseName, setCourseName] = useState(course.name);
   const [courseTeacher, setCourseTeacher] = useState(course.teacher);
@@ -302,6 +312,33 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
     setShowNewDateForm(false);
   };
 
+  const startEditDate = (item: CourseDate) => {
+    setEditingDateId(item.id);
+    setEditDateTitle(item.title);
+    setEditDateCategory(item.category);
+    setEditDateValue(item.date);
+    setEditDateTime(item.time);
+    setEditDateRoom(item.room);
+    setEditDateTeacher(item.teacher);
+  };
+
+  const handleSaveDateEdit = (e: React.FormEvent, item: CourseDate) => {
+    e.preventDefault();
+    const cleanTitle = clampString(editDateTitle, VALIDATION_LIMITS.DATE_TITLE_MAX);
+    const cleanDate = clampString(editDateValue, VALIDATION_LIMITS.DATE_STR_MAX);
+    if (!cleanTitle || !cleanDate) return;
+    onUpdateDate(item.id, {
+      title: cleanTitle,
+      category: editDateCategory,
+      date: cleanDate,
+      time: clampString(editDateTime, VALIDATION_LIMITS.TIME_STR_MAX),
+      room: clampString(editDateRoom, VALIDATION_LIMITS.ROOM_MAX),
+      teacher: clampString(editDateTeacher, VALIDATION_LIMITS.TEACHER_MAX),
+      isCompleted: item.isCompleted,
+    });
+    setEditingDateId(null);
+  };
+
   const handleSaveCourseDetails = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = clampString(courseCode, VALIDATION_LIMITS.COURSE_CODE_MAX);
@@ -324,7 +361,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
   return (
     <div className="bg-white border border-slate-200 rounded-md transition-colors">
       {/* Main Accordion Row — inspired directly by the IS MUNI screenshot */}
-      <div className="flex items-center justify-between px-4 py-3.5 gap-4 hover:bg-slate-50/80 transition-colors">
+      <div className="flex items-center justify-between px-4 py-3.5 gap-3 hover:bg-slate-50/80 transition-colors">
         <button
           type="button"
           onClick={onToggleExpand}
@@ -353,22 +390,24 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
               <span>{course.completionType}</span>
               <span aria-hidden="true">·</span>
               <span className="font-mono tabular-nums">{course.credits} kr.</span>
-              {course.teacher && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="truncate max-w-[220px]">{course.teacher}</span>
-                </>
-              )}
-              {course.room && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="truncate max-w-[160px]">{course.room}</span>
-                </>
-              )}
+              <span aria-hidden="true">·</span>
+              <span>
+                Vyučující:{' '}
+                <strong className="font-medium text-slate-700">
+                  {course.teacher || 'nenastaveno'}
+                </strong>
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>
+                Místnost:{' '}
+                <strong className="font-medium text-slate-700">
+                  {course.room || 'nenastaveno'}
+                </strong>
+              </span>
               {course.scheduleSummary && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="truncate max-w-[180px]">{course.scheduleSummary}</span>
+                  <span>{course.scheduleSummary}</span>
                 </>
               )}
               <span aria-hidden="true">·</span>
@@ -379,7 +418,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                 <>
                   <span aria-hidden="true">·</span>
                   <span className="text-amber-700 font-medium font-mono tabular-nums">
-                    Úkoly k odevzdání: {pendingTasksCount}
+                    Úkoly: {pendingTasksCount}
                   </span>
                 </>
               )}
@@ -387,8 +426,23 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
           </div>
         </button>
 
-        {/* Right Side Controls: Course Completion Checkmark (like ISKB60 in screenshot) + Expand Chevron */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Right Side Controls: Direct Edit Button + Course Completion Checkmark + Expand Chevron */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isExpanded) {
+                onToggleExpand();
+              }
+              setShowCourseDetailsEditor((prev) => !prev);
+            }}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#003865] hover:bg-sky-50 rounded transition-colors whitespace-nowrap"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Upravit předmět</span>
+          </button>
+
           <button
             type="button"
             onClick={(e) => {
@@ -416,7 +470,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
               <Check className="w-3.5 h-3.5 stroke-[2.5]" />
             </span>
             <span className="hidden sm:inline whitespace-nowrap">
-              {course.isCompleted ? 'Ukončeno' : 'Splnit předmět'}
+              {course.isCompleted ? 'Ukončeno' : 'Splnit'}
             </span>
           </button>
 
@@ -438,9 +492,190 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
       {/* Expanded Course Workspace */}
       {isExpanded && (
         <div className="border-t border-slate-200 px-5 py-5 space-y-5 bg-slate-50/40">
-          {/* Quick Course Info & Sub-Navigation Bar */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200">
-            {/* Segmented Interactive Sub-Tabs */}
+          {/* =============================================================== */}
+          {/* ALWAYS-VISIBLE INLINE BAR FOR VYUČUJÍCÍ, MÍSTNOST, ROZVRH       */}
+          {/* =============================================================== */}
+          <form
+            onSubmit={handleSaveCourseDetails}
+            className="bg-white border border-slate-200 rounded-md p-4 space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-900">
+                  Informace o předmětu (vyučující, místnost, čas výuky, ukončení)
+                </span>
+                {courseSavedBanner && (
+                  <span className="text-xs font-medium text-emerald-700">
+                    · Uloženo
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCourseDetailsEditor((v) => !v)}
+                  className="text-xs text-slate-500 hover:text-slate-900 underline whitespace-nowrap"
+                >
+                  {showCourseDetailsEditor
+                    ? 'Skrýt úpravu kódu/názvu a smazání'
+                    : 'Upravit kód/název nebo smazat předmět'}
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#003865] rounded hover:bg-[#002848] transition-colors whitespace-nowrap"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  Uložit údaje předmětu
+                </button>
+              </div>
+            </div>
+
+            {/* Primary Editable Row: Vyučující, Místnost, Čas/Rozvrh, Ukončení, Kredity */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="lg:col-span-2">
+                <label className="block text-xs text-slate-600 mb-1">
+                  Vyučující
+                </label>
+                <input
+                  type="text"
+                  value={courseTeacher}
+                  onChange={(e) => setCourseTeacher(e.target.value)}
+                  placeholder="Zadejte jméno vyučujícího..."
+                  maxLength={VALIDATION_LIMITS.TEACHER_MAX}
+                  className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">
+                  Místnost / učebna
+                </label>
+                <input
+                  type="text"
+                  value={courseRoom}
+                  onChange={(e) => setCourseRoom(e.target.value)}
+                  placeholder="např. A22 / Online"
+                  maxLength={VALIDATION_LIMITS.ROOM_MAX}
+                  className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">
+                  Pravidelný termín výuky
+                </label>
+                <input
+                  type="text"
+                  value={courseSchedule}
+                  onChange={(e) => setCourseSchedule(e.target.value)}
+                  placeholder="např. Út 10:00–11:40"
+                  maxLength={VALIDATION_LIMITS.SCHEDULE_MAX}
+                  className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">
+                    Ukončení
+                  </label>
+                  <select
+                    value={courseCompletionType}
+                    onChange={(e) =>
+                      setCourseCompletionType(e.target.value as CompletionType)
+                    }
+                    className="w-full px-2 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                  >
+                    <option value="Zkouška">Zkouška</option>
+                    <option value="Zápočet">Zápočet</option>
+                    <option value="Kolokvium">Kolokvium</option>
+                    <option value="Klasifikovaný zápočet">Klas. záp.</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">
+                    Kredity
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={60}
+                    value={courseCredits}
+                    onChange={(e) => setCourseCredits(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 text-sm font-mono tabular-nums bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Expandable Code, Name, and Delete Row */}
+            {showCourseDetailsEditor && (
+              <div className="pt-3 border-t border-slate-200 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">
+                      Kód předmětu *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={courseCode}
+                      onChange={(e) => setCourseCode(e.target.value)}
+                      maxLength={VALIDATION_LIMITS.COURSE_CODE_MAX}
+                      className="w-full px-3 py-1.5 text-sm font-mono bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="block text-xs text-slate-600 mb-1">
+                      Název předmětu *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={courseName}
+                      onChange={(e) => setCourseName(e.target.value)}
+                      maxLength={VALIDATION_LIMITS.COURSE_NAME_MAX}
+                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  {!confirmDeleteCourse ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteCourse(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-800"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Smazat předmět ze semestru
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-red-700 font-medium">
+                        Opravdu smazat předmět {course.code} i s úkoly a zápisy?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteCourse(course.id)}
+                        className="px-2.5 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
+                      >
+                        Ano, smazat
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteCourse(false)}
+                        className="px-2.5 py-1 text-xs text-slate-600 hover:text-slate-900"
+                      >
+                        Zrušit
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </form>
+
+          {/* Sub-Navigation Bar for Topics/Notes, Tasks, and Course Dates */}
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-slate-200">
             <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-fit">
               <button
                 type="button"
@@ -475,41 +710,6 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
               >
                 Termíny předmětu ({dates.length})
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('settings')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-                  activeTab === 'settings'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Vyučující, místnost a úprava
-              </button>
-            </div>
-
-            {/* Quick Contextual Summary of Teacher & Room */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-              <span>
-                Vyučující:{' '}
-                <strong className="font-medium text-slate-900">
-                  {course.teacher || 'Nezadáno'}
-                </strong>
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Místnost:{' '}
-                <strong className="font-medium text-slate-900">
-                  {course.room || 'Nezadáno'}
-                </strong>
-              </span>
-              <button
-                type="button"
-                onClick={() => setActiveTab('settings')}
-                className="text-[#003865] hover:underline font-medium whitespace-nowrap"
-              >
-                Upravit údaje
-              </button>
             </div>
           </div>
 
@@ -524,7 +724,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                     Probíraná témata a studijní zápisy
                   </h4>
                   <p className="text-xs text-slate-500">
-                    Zaškrtněte zpracovaná témata a pište si ke každému tématu podrobné poznámky ke zkoušce nebo kolokviu.
+                    Přidejte si probíraná témata, zaškrtněte jejich zpracování a pište si k nim vlastní zápisy.
                   </p>
                 </div>
                 <button
@@ -554,7 +754,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                         type="text"
                         value={newTopicWeek}
                         onChange={(e) => setNewTopicWeek(e.target.value)}
-                        placeholder="např. 3. týden"
+                        placeholder="např. 1. týden"
                         maxLength={VALIDATION_LIMITS.TOPIC_WEEK_MAX}
                         className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
                       />
@@ -568,7 +768,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                         required
                         value={newTopicTitle}
                         onChange={(e) => setNewTopicTitle(e.target.value)}
-                        placeholder="např. Katalogizace, metadatové standardy a MARC 21"
+                        placeholder="Zadejte název tématu nebo okruhu..."
                         maxLength={VALIDATION_LIMITS.TOPIC_TITLE_MAX}
                         className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
                       />
@@ -576,10 +776,10 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                   </div>
                   <div>
                     <label className="block text-xs text-slate-600 mb-1">
-                      Úvodní zápis / poznámky k tématu (volitelné)
+                      Zápis / poznámky k tématu (volitelné)
                     </label>
                     <textarea
-                      rows={3}
+                      rows={4}
                       value={newTopicNotes}
                       onChange={(e) => setNewTopicNotes(e.target.value)}
                       placeholder="Zde si můžete rovnou zapsat poznámky z přednášky nebo četby..."
@@ -845,7 +1045,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                     Úkoly k odevzdání a studijní povinnosti
                   </h4>
                   <p className="text-xs text-slate-500">
-                    Sledujte termíny odevzdání seminárních prací, esejů a průběžných cvičení.
+                    Přidejte si úkoly k odevzdání, upravujte jejich termíny a odškrtávejte splněné povinnosti.
                   </p>
                 </div>
                 <button
@@ -1124,7 +1324,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                     Termíny předmětu, bloková výuka a zkouškové termíny
                   </h4>
                   <p className="text-xs text-slate-500">
-                    Evidujte si data přednášek, seminářů, konzultací a zkouškových termínů včetně místnosti a vyučujícího.
+                    Přidávejte a upravujte si data přednášek, seminářů, konzultací a zkoušek včetně místnosti a vyučujícího.
                   </p>
                 </div>
                 <button
@@ -1262,7 +1462,11 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                   </p>
                   <button
                     type="button"
-                    onClick={() => setShowNewDateForm(true)}
+                    onClick={() => {
+                      setNewDateRoom(course.room);
+                      setNewDateTeacher(course.teacher);
+                      setShowNewDateForm(true);
+                    }}
                     className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[#003865] hover:underline"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -1271,257 +1475,177 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                 </div>
               ) : (
                 <div className="bg-white border border-slate-200 rounded-md divide-y divide-slate-200">
-                  {dates.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-3.5 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors"
-                    >
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <input
-                          type="checkbox"
-                          checked={item.isCompleted}
-                          onChange={() =>
-                            onUpdateDate(item.id, {
-                              isCompleted: !item.isCompleted,
-                            })
-                          }
-                          aria-label={`Absolvováno: ${item.title}`}
-                          className="mt-1 h-4 w-4 rounded border-slate-300 text-[#003865] focus:ring-[#003865] cursor-pointer shrink-0"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p
-                            className={`text-sm font-medium ${
-                              item.isCompleted
-                                ? 'text-slate-500 line-through'
-                                : 'text-slate-900'
-                            }`}
-                          >
-                            {item.title}
-                          </p>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
-                            <span className="font-medium text-slate-700">
-                              {item.category}
-                            </span>
-                            <span aria-hidden="true">·</span>
-                            <span className="font-mono tabular-nums text-slate-800">
-                              {item.date}
-                              {item.time ? ` (${item.time})` : ''}
-                            </span>
-                            {item.room && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span>Místnost: {item.room}</span>
-                              </>
-                            )}
-                            {item.teacher && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span>Vyučující: {item.teacher}</span>
-                              </>
-                            )}
+                  {dates.map((item) => {
+                    if (editingDateId === item.id) {
+                      return (
+                        <form
+                          key={item.id}
+                          onSubmit={(e) => handleSaveDateEdit(e, item)}
+                          className="p-4 space-y-3 bg-slate-50"
+                        >
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="sm:col-span-2">
+                              <input
+                                type="text"
+                                required
+                                value={editDateTitle}
+                                onChange={(e) => setEditDateTitle(e.target.value)}
+                                placeholder="Název termínu"
+                                className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded"
+                              />
+                            </div>
+                            <div>
+                              <select
+                                value={editDateCategory}
+                                onChange={(e) =>
+                                  setEditDateCategory(
+                                    e.target.value as DateCategory
+                                  )
+                                }
+                                className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded"
+                              >
+                                <option value="Přednáška">Přednáška</option>
+                                <option value="Seminář">Seminář</option>
+                                <option value="Zkouška">Zkouška</option>
+                                <option value="Bloková výuka">Bloková výuka</option>
+                                <option value="Konzultace">Konzultace</option>
+                                <option value="Jiné">Jiné</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                            <div>
+                              <input
+                                type="date"
+                                required
+                                value={editDateValue}
+                                onChange={(e) => setEditDateValue(e.target.value)}
+                                className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded font-mono tabular-nums"
+                              />
+                            </div>
+                            <div>
+                              <input
+                                type="text"
+                                value={editDateTime}
+                                onChange={(e) => setEditDateTime(e.target.value)}
+                                placeholder="Čas (10:00–11:40)"
+                                className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded font-mono tabular-nums"
+                              />
+                            </div>
+                            <div>
+                              <input
+                                type="text"
+                                value={editDateRoom}
+                                onChange={(e) => setEditDateRoom(e.target.value)}
+                                placeholder="Místnost"
+                                className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded"
+                              />
+                            </div>
+                            <div>
+                              <input
+                                type="text"
+                                value={editDateTeacher}
+                                onChange={(e) => setEditDateTeacher(e.target.value)}
+                                placeholder="Vyučující"
+                                className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditingDateId(null)}
+                              className="px-3 py-1 text-xs text-slate-600"
+                            >
+                              Zrušit
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-3 py-1 text-xs font-medium text-white bg-[#003865] rounded"
+                            >
+                              Uložit změny termínu
+                            </button>
+                          </div>
+                        </form>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-3.5 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={item.isCompleted}
+                            onChange={() =>
+                              onUpdateDate(item.id, {
+                                isCompleted: !item.isCompleted,
+                              })
+                            }
+                            aria-label={`Absolvováno: ${item.title}`}
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-[#003865] focus:ring-[#003865] cursor-pointer shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className={`text-sm font-medium ${
+                                item.isCompleted
+                                  ? 'text-slate-500 line-through'
+                                  : 'text-slate-900'
+                              }`}
+                            >
+                              {item.title}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
+                              <span className="font-medium text-slate-700">
+                                {item.category}
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-mono tabular-nums text-slate-800">
+                                {item.date}
+                                {item.time ? ` (${item.time})` : ''}
+                              </span>
+                              {item.room && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span>Místnost: {item.room}</span>
+                                </>
+                              )}
+                              {item.teacher && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span>Vyučující: {item.teacher}</span>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <button
-                        type="button"
-                        onClick={() => onDeleteDate(item.id)}
-                        title="Smazat termín"
-                        className="p-1.5 text-slate-400 hover:text-red-600 transition-colors shrink-0"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => startEditDate(item)}
+                            title="Upravit termín"
+                            className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteDate(item.id)}
+                            title="Smazat termín"
+                            className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
-          )}
-
-          {/* =============================================================== */}
-          {/* TAB 4: VYUČUJÍCÍ, MÍSTNOST A ÚPRAVA PŘEDMĚTU                    */}
-          {/* =============================================================== */}
-          {activeTab === 'settings' && (
-            <form
-              onSubmit={handleSaveCourseDetails}
-              className="bg-white border border-slate-200 rounded-md p-4 space-y-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
-                <div>
-                  <h4 className="text-sm font-semibold text-slate-900">
-                    Údaje předmětu (vyučující, místnost, ukončení)
-                  </h4>
-                  <p className="text-xs text-slate-500">
-                    Upravte kód, název, vyučujícího, místnost nebo způsob ukončení předmětu.
-                  </p>
-                </div>
-                {courseSavedBanner && (
-                  <span className="text-xs font-medium text-emerald-700">
-                    Změny předmětu byly uloženy
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">
-                    Kód předmětu *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={courseCode}
-                    onChange={(e) => setCourseCode(e.target.value)}
-                    maxLength={VALIDATION_LIMITS.COURSE_CODE_MAX}
-                    className="w-full px-3 py-1.5 text-sm font-mono bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                  />
-                </div>
-                <div className="sm:col-span-3">
-                  <label className="block text-xs text-slate-600 mb-1">
-                    Název předmětu *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={courseName}
-                    onChange={(e) => setCourseName(e.target.value)}
-                    maxLength={VALIDATION_LIMITS.COURSE_NAME_MAX}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">
-                    Vyučující
-                  </label>
-                  <input
-                    type="text"
-                    value={courseTeacher}
-                    onChange={(e) => setCourseTeacher(e.target.value)}
-                    placeholder="např. PhDr. Petr Škyřík, Ph.D."
-                    maxLength={VALIDATION_LIMITS.TEACHER_MAX}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">
-                    Místnost / učebna
-                  </label>
-                  <input
-                    type="text"
-                    value={courseRoom}
-                    onChange={(e) => setCourseRoom(e.target.value)}
-                    placeholder="např. Učebna A22 / Online"
-                    maxLength={VALIDATION_LIMITS.ROOM_MAX}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">
-                    Pravidelný termín / rozvrh
-                  </label>
-                  <input
-                    type="text"
-                    value={courseSchedule}
-                    onChange={(e) => setCourseSchedule(e.target.value)}
-                    placeholder="např. Út 10:00–11:40"
-                    maxLength={VALIDATION_LIMITS.SCHEDULE_MAX}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">
-                    Způsob ukončení
-                  </label>
-                  <select
-                    value={courseCompletionType}
-                    onChange={(e) =>
-                      setCourseCompletionType(e.target.value as CompletionType)
-                    }
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                  >
-                    <option value="Zkouška">Zkouška</option>
-                    <option value="Zápočet">Zápočet</option>
-                    <option value="Kolokvium">Kolokvium</option>
-                    <option value="Klasifikovaný zápočet">
-                      Klasifikovaný zápočet
-                    </option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">
-                    Počet kreditů (ECTS)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={60}
-                    value={courseCredits}
-                    onChange={(e) => setCourseCredits(Number(e.target.value))}
-                    className="w-full px-3 py-1.5 text-sm font-mono tabular-nums bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                  />
-                </div>
-                <div className="flex items-end pb-1">
-                  <label className="inline-flex items-center gap-2 text-sm text-slate-800 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={course.isCompleted}
-                      onChange={() => onToggleCourseCompleted(course)}
-                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600"
-                    />
-                    <span>Předmět je úspěšně ukončen (splněn)</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200">
-                <div>
-                  {!confirmDeleteCourse ? (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteCourse(true)}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-800"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Smazat předmět ze semestru
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-red-700 font-medium">
-                        Opravdu smazat předmět {course.code} i s úkoly a zápisy?
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteCourse(course.id)}
-                        className="px-2.5 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700"
-                      >
-                        Ano, smazat
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteCourse(false)}
-                        className="px-2.5 py-1 text-xs text-slate-600 hover:text-slate-900"
-                      >
-                        Zrušit
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-[#003865] rounded-md hover:bg-[#002848] transition-colors whitespace-nowrap"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  Uložit údaje předmětu
-                </button>
-              </div>
-            </form>
           )}
         </div>
       )}

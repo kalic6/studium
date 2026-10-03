@@ -67,7 +67,7 @@ type MainNavView = 'courses' | 'agenda' | 'notes' | 'overview';
 type CourseFilter = 'all' | 'active' | 'completed';
 type AgendaFilter = 'all' | 'pending' | 'completed';
 
-const LOCAL_STORAGE_KEY = 'studijni_denik_local_v1';
+const LOCAL_STORAGE_KEY = 'studijni_denik_local_v2';
 
 export default function App() {
   return (
