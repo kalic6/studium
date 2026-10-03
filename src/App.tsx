@@ -3,6 +3,7 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   signOut,
+  sendEmailVerification,
   User,
 } from 'firebase/auth';
 import {
@@ -16,7 +17,6 @@ import {
   deleteDoc,
   writeBatch,
   serverTimestamp,
-  getDocs,
 } from 'firebase/firestore';
 import {
   Plus,
@@ -25,7 +25,6 @@ import {
   Trash2,
   Check,
   FileText,
-  LogIn,
   LogOut,
   RotateCcw,
   X,
@@ -61,6 +60,15 @@ import {
   getInitialTasks,
   getInitialDates,
 } from './defaultData';
+import {
+  ActiveStudentSession,
+  buildSessionFromFirebaseUser,
+  getSavedActiveLocalSession,
+  saveActiveLocalSession,
+  loadUserStudyData,
+  saveUserStudyData,
+} from './authAccounts';
+import { AuthScreen } from './components/AuthScreen';
 import { CourseAccordionItem } from './components/CourseAccordionItem';
 import { RichNoteEditor } from './components/RichNoteEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -68,8 +76,6 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 type MainNavView = 'courses' | 'agenda' | 'notes' | 'overview';
 type CourseFilter = 'all' | 'active' | 'completed';
 type AgendaFilter = 'all' | 'pending' | 'completed';
-
-const LOCAL_STORAGE_KEY = 'studijni_denik_local_v2';
 
 export default function App() {
   return (
@@ -82,77 +88,26 @@ export default function App() {
 function StudyOrganizerWorkspace() {
   // Auth state
   const [user, setUser] = useState<User | null>(null);
+  const [activeSession, setActiveSession] = useState<ActiveStudentSession | null>(
+    null
+  );
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isLoadingUserCloud, setIsLoadingUserCloud] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [isSeedingCloud, setIsSeedingCloud] = useState(false);
 
-  // Data state (populated locally before sign-in, or synced via Firestore when signed in)
-  const [semesters, setSemesters] = useState<Semester[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.semesters) && parsed.semesters.length > 0) {
-          return parsed.semesters;
-        }
-      }
-    } catch {
-      // ignore local storage parse error
-    }
-    return getInitialSemesters('local_user');
-  });
+  const isCloudVerified = Boolean(
+    user && activeSession?.isFirebaseAuth && activeSession?.isEmailVerified
+  );
+  const currentOwnerId = activeSession?.uid || 'local_user';
 
-  const [courses, setCourses] = useState<Course[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.courses)) return parsed.courses;
-      }
-    } catch {
-      // ignore
-    }
-    return getInitialCourses('local_user');
-  });
-
-  const [topics, setTopics] = useState<CourseTopic[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.topics)) return parsed.topics;
-      }
-    } catch {
-      // ignore
-    }
-    return getInitialTopics('local_user');
-  });
-
-  const [tasks, setTasks] = useState<CourseTask[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.tasks)) return parsed.tasks;
-      }
-    } catch {
-      // ignore
-    }
-    return getInitialTasks('local_user');
-  });
-
-  const [dates, setDates] = useState<CourseDate[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.dates)) return parsed.dates;
-      }
-    } catch {
-      // ignore
-    }
-    return getInitialDates('local_user');
-  });
+  // Data state (isolated per student account UID)
+  const [semesters, setSemesters] = useState<Semester[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [topics, setTopics] = useState<CourseTopic[]>([]);
+  const [tasks, setTasks] = useState<CourseTask[]>([]);
+  const [dates, setDates] = useState<CourseDate[]>([]);
 
   // UI Navigation State
   const [activeNav, setActiveNav] = useState<MainNavView>('courses');
@@ -210,28 +165,60 @@ function StudyOrganizerWorkspace() {
     null
   );
 
-  // Persist local state when signed out
-  useEffect(() => {
-    if (!user) {
-      try {
-        localStorage.setItem(
-          LOCAL_STORAGE_KEY,
-          JSON.stringify({ semesters, courses, topics, tasks, dates })
-        );
-      } catch {
-        // ignore quota errors
-      }
-    }
-  }, [user, semesters, courses, topics, tasks, dates]);
-
-  // Listen to Firebase Auth state
+  // Listen to Firebase Auth state & restore active session
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        const session = buildSessionFromFirebaseUser(currentUser);
+        setActiveSession(session);
+        saveActiveLocalSession(session);
+      } else {
+        const savedLocal = getSavedActiveLocalSession();
+        if (savedLocal && !savedLocal.isFirebaseAuth) {
+          setActiveSession(savedLocal);
+        } else {
+          setActiveSession(null);
+        }
+      }
       setIsAuthReady(true);
     });
     return () => unsubscribe();
   }, []);
+
+  // Load isolated study data whenever the signed-in student UID changes
+  useEffect(() => {
+    if (!activeSession?.uid) {
+      setSemesters([]);
+      setCourses([]);
+      setTopics([]);
+      setTasks([]);
+      setDates([]);
+      return;
+    }
+    const bundle = loadUserStudyData(activeSession.uid);
+    setSemesters(bundle.semesters);
+    setCourses(bundle.courses);
+    setTopics(bundle.topics);
+    setTasks(bundle.tasks);
+    setDates(bundle.dates);
+    if (bundle.semesters[0]) {
+      setSelectedSemesterId(bundle.semesters[0].id);
+    }
+  }, [activeSession?.uid]);
+
+  // Persist changes to per-student isolated storage
+  useEffect(() => {
+    if (activeSession?.uid && semesters.length > 0) {
+      saveUserStudyData(activeSession.uid, {
+        semesters,
+        courses,
+        topics,
+        tasks,
+        dates,
+      });
+    }
+  }, [activeSession?.uid, semesters, courses, topics, tasks, dates]);
 
   // Seed initial 1st semester & screenshot courses into Firestore for a new authenticated user
   const seedUserDatabase = async (uid: string) => {
@@ -335,10 +322,14 @@ function StudyOrganizerWorkspace() {
     }
   };
 
-  // Attach Firestore listeners strictly when auth is ready and user is signed in
+  // Attach Firestore listeners strictly when auth is ready and user has a verified Firebase session
   useEffect(() => {
-    if (!isAuthReady || !user) return;
+    if (!isAuthReady || !user || !isCloudVerified) {
+      setIsLoadingUserCloud(false);
+      return;
+    }
 
+    setIsLoadingUserCloud(true);
     let hasCheckedEmpty = false;
 
     const semQuery = query(
@@ -351,6 +342,7 @@ function StudyOrganizerWorkspace() {
         if (snapshot.empty && !hasCheckedEmpty) {
           hasCheckedEmpty = true;
           await seedUserDatabase(user.uid);
+          setIsLoadingUserCloud(false);
           return;
         }
         hasCheckedEmpty = true;
@@ -358,8 +350,12 @@ function StudyOrganizerWorkspace() {
           .map((d) => ({ id: d.id, ...(d.data() as Omit<Semester, 'id'>) }))
           .sort((a, b) => a.order - b.order);
         setSemesters(loaded);
+        setIsLoadingUserCloud(false);
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'semesters')
+      (err) => {
+        setIsLoadingUserCloud(false);
+        handleFirestoreError(err, OperationType.LIST, 'semesters');
+      }
     );
 
     const coursesQuery = query(
@@ -430,7 +426,7 @@ function StudyOrganizerWorkspace() {
       unsubTasks();
       unsubDates();
     };
-  }, [isAuthReady, user]);
+  }, [isAuthReady, user, isCloudVerified]);
 
   // Ensure selectedSemesterId always points to an existing semester
   const activeSemester = useMemo(() => {
@@ -511,21 +507,75 @@ function StudyOrganizerWorkspace() {
   // =========================================================================
   // AUTH HANDLERS
   // =========================================================================
-  const handleSignIn = async () => {
+  const handleAuthenticatedSession = (
+    session: ActiveStudentSession,
+    infoBanner?: string | null
+  ) => {
     setAuthError(null);
+    setAuthNotice(infoBanner || null);
+    setActiveSession(session);
+    saveActiveLocalSession(session);
+  };
+
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    setAuthNotice(null);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const cred = await signInWithPopup(auth, googleProvider);
+      const session = buildSessionFromFirebaseUser(cred.user);
+      setActiveSession(session);
+      saveActiveLocalSession(session);
     } catch (err) {
       setAuthError(
         err instanceof Error
           ? err.message
-          : 'Přihlášení se nezdařilo. Zkuste to prosím znovu.'
+          : 'Přihlášení přes Google se nezdařilo.'
       );
     }
   };
 
+  const handleRefreshEmailVerification = async () => {
+    if (!auth.currentUser) return;
+    try {
+      await auth.currentUser.reload();
+      const updated = buildSessionFromFirebaseUser(auth.currentUser);
+      setActiveSession(updated);
+      saveActiveLocalSession(updated);
+      if (updated.isEmailVerified) {
+        setAuthNotice('E-mail byl úspěšně ověřen! Vaše studijní záznamy jsou nyní synchronizovány s cloudem.');
+      } else {
+        setAuthNotice('E-mail zatím nebyl potvrzen. Klikněte na odkaz v doručeném e-mailu a poté zkuste znovu.');
+      }
+    } catch {
+      // ignore reload error
+    }
+  };
+
+  const handleResendVerificationEmail = async () => {
+    if (!auth.currentUser) return;
+    try {
+      await sendEmailVerification(auth.currentUser);
+      setAuthNotice(`Ověřovací e-mail byl znovu odeslán na adresu ${auth.currentUser.email}.`);
+    } catch {
+      setAuthNotice('Ověřovací e-mail byl odeslán nedávno. Zkontrolujte prosím svou schránku.');
+    }
+  };
+
   const handleSignOut = async () => {
-    await signOut(auth);
+    setAuthNotice(null);
+    setAuthError(null);
+    saveActiveLocalSession(null);
+    setActiveSession(null);
+    try {
+      await signOut(auth);
+    } catch {
+      // ignore signOut errors for local accounts
+    }
+    setSemesters([]);
+    setCourses([]);
+    setTopics([]);
+    setTasks([]);
+    setDates([]);
   };
 
   // =========================================================================
@@ -566,7 +616,7 @@ function StudyOrganizerWorkspace() {
 
     if (semesterModalMode === 'create') {
       const newId = generateSafeId('sem');
-      if (user) {
+      if (isCloudVerified && user) {
         try {
           await setDoc(doc(db, 'semesters', newId), {
             ownerId: user.uid,
@@ -586,7 +636,7 @@ function StudyOrganizerWorkspace() {
             ...prev,
             {
               id: newId,
-              ownerId: 'local_user',
+              ownerId: currentOwnerId,
               title: cleanTitle,
               academicYear: cleanYear,
               period: semPeriodInput,
@@ -597,7 +647,7 @@ function StudyOrganizerWorkspace() {
       }
       setSelectedSemesterId(newId);
     } else if (semesterModalMode === 'edit' && editingSemester) {
-      if (user) {
+      if (isCloudVerified && user) {
         try {
           await updateDoc(doc(db, 'semesters', editingSemester.id), {
             title: cleanTitle,
@@ -640,7 +690,7 @@ function StudyOrganizerWorkspace() {
     const targetId = semesterToDelete.id;
     setSemesterToDelete(null);
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         const batch = writeBatch(db);
         topics
@@ -685,7 +735,7 @@ function StudyOrganizerWorkspace() {
     const newId = generateSafeId('course');
     const order = semesterCourses.length + 1;
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         await setDoc(doc(db, 'courses', newId), {
           ownerId: user.uid,
@@ -713,7 +763,7 @@ function StudyOrganizerWorkspace() {
         ...prev,
         {
           id: newId,
-          ownerId: 'local_user',
+          ownerId: currentOwnerId,
           semesterId: activeSemester.id,
           code: cleanCode,
           name: cleanName,
@@ -743,7 +793,7 @@ function StudyOrganizerWorkspace() {
 
   const handleToggleCourseCompleted = async (course: Course) => {
     const nextState = !course.isCompleted;
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         await updateDoc(doc(db, 'courses', course.id), {
           isCompleted: nextState,
@@ -810,7 +860,7 @@ function StudyOrganizerWorkspace() {
       order: existingCourse.order,
     };
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         await updateDoc(doc(db, 'courses', courseId), {
           ...payload,
@@ -827,7 +877,7 @@ function StudyOrganizerWorkspace() {
   };
 
   const handleDeleteCourse = async (courseId: string) => {
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         const batch = writeBatch(db);
         topics
@@ -858,13 +908,13 @@ function StudyOrganizerWorkspace() {
       semesterCourses.map((c) => c.code.toUpperCase())
     );
     const defaults = getInitialCourses(
-      user ? user.uid : 'local_user',
+      currentOwnerId,
       activeSemester.id
     ).filter((d) => !existingCodes.has(d.code.toUpperCase()));
 
     if (defaults.length === 0) return;
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         const batch = writeBatch(db);
         for (const c of defaults) {
@@ -916,7 +966,7 @@ function StudyOrganizerWorkspace() {
     if (!course) return;
     const newId = generateSafeId('topic');
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         await setDoc(doc(db, 'topics', newId), {
           ownerId: user.uid,
@@ -940,7 +990,7 @@ function StudyOrganizerWorkspace() {
         ...prev,
         {
           id: newId,
-          ownerId: 'local_user',
+          ownerId: currentOwnerId,
           semesterId: course.semesterId,
           courseId: course.id,
           title: clampString(payload.title, VALIDATION_LIMITS.TOPIC_TITLE_MAX),
@@ -967,7 +1017,7 @@ function StudyOrganizerWorkspace() {
     const isToggleOnly =
       Object.keys(updates).length === 1 && updates.isProcessed !== undefined;
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         if (isToggleOnly) {
           await updateDoc(doc(db, 'topics', topicId), {
@@ -1022,7 +1072,7 @@ function StudyOrganizerWorkspace() {
   };
 
   const handleDeleteTopic = async (topicId: string) => {
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         await deleteDoc(doc(db, 'topics', topicId));
       } catch (err) {
@@ -1054,7 +1104,7 @@ function StudyOrganizerWorkspace() {
       VALIDATION_LIMITS.TASK_WORK_NOTES_MAX
     );
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         await setDoc(doc(db, 'tasks', newId), {
           ownerId: user.uid,
@@ -1080,7 +1130,7 @@ function StudyOrganizerWorkspace() {
         ...prev,
         {
           id: newId,
-          ownerId: 'local_user',
+          ownerId: currentOwnerId,
           semesterId: course.semesterId,
           courseId: course.id,
           title: clampString(payload.title, VALIDATION_LIMITS.TASK_TITLE_MAX),
@@ -1119,7 +1169,7 @@ function StudyOrganizerWorkspace() {
     const isWorkNotesOnly =
       Object.keys(updates).length === 1 && updates.workNotes !== undefined;
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         if (isToggleOnly) {
           await updateDoc(doc(db, 'tasks', taskId), {
@@ -1193,7 +1243,7 @@ function StudyOrganizerWorkspace() {
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         await deleteDoc(doc(db, 'tasks', taskId));
       } catch (err) {
@@ -1222,7 +1272,7 @@ function StudyOrganizerWorkspace() {
     if (!course) return;
     const newId = generateSafeId('date');
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         await setDoc(doc(db, 'courseDates', newId), {
           ownerId: user.uid,
@@ -1250,7 +1300,7 @@ function StudyOrganizerWorkspace() {
         ...prev,
         {
           id: newId,
-          ownerId: 'local_user',
+          ownerId: currentOwnerId,
           semesterId: course.semesterId,
           courseId: course.id,
           title: clampString(payload.title, VALIDATION_LIMITS.DATE_TITLE_MAX),
@@ -1280,7 +1330,7 @@ function StudyOrganizerWorkspace() {
     const isToggleOnly =
       Object.keys(updates).length === 1 && updates.isCompleted !== undefined;
 
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         if (isToggleOnly) {
           await updateDoc(doc(db, 'courseDates', dateId), {
@@ -1329,7 +1379,7 @@ function StudyOrganizerWorkspace() {
   };
 
   const handleDeleteDate = async (dateId: string) => {
-    if (user) {
+    if (isCloudVerified && user) {
       try {
         await deleteDoc(doc(db, 'courseDates', dateId));
       } catch (err) {
@@ -1351,6 +1401,26 @@ function StudyOrganizerWorkspace() {
     });
     return map;
   }, [courses]);
+
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] text-[#0F172A] p-6">
+        <div className="text-sm text-slate-600">
+          Načítám přihlášení do Studijního deníku...
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeSession) {
+    return (
+      <AuthScreen
+        onAuthenticated={handleAuthenticatedSession}
+        onGoogleSignIn={handleGoogleSignIn}
+        externalError={authError}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A]">
@@ -1441,26 +1511,15 @@ function StudyOrganizerWorkspace() {
             + Přidat předmět
           </button>
 
-          {user ? (
-            <button
-              type="button"
-              onClick={handleSignOut}
-              title={`Přihlášen: ${user.email || user.displayName || 'Uživatel'}`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition-colors whitespace-nowrap"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Odhlásit</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSignIn}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-800 bg-slate-100 border border-slate-300 rounded-md hover:bg-slate-200 transition-colors whitespace-nowrap"
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>Uložit do cloudu (Google)</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleSignOut}
+            title={`Přihlášen: ${activeSession.nickname} (${activeSession.email})`}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition-colors whitespace-nowrap"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Odhlásit ({activeSession.nickname})</span>
+          </button>
         </div>
       </header>
 
@@ -1675,27 +1734,65 @@ function StudyOrganizerWorkspace() {
             )}
           </div>
 
-          {/* Account / Storage Mode Notice */}
-          <div className="pt-4 border-t border-slate-200 text-xs text-slate-500 space-y-2">
-            {user ? (
+          {/* Account / Student Profile Info */}
+          <div className="pt-4 border-t border-slate-200 text-xs text-slate-500 space-y-2.5">
+            <div className="space-y-2">
               <div>
-                <div className="font-medium text-emerald-700">
-                  Privátní cloud databáze aktivní
+                <div className="font-semibold text-slate-900">
+                  Přihlášený student
                 </div>
-                <div className="truncate font-mono text-[11px] text-slate-500 mt-0.5">
-                  {user.email}
+                <div className="text-xs font-semibold text-[#003865] truncate mt-0.5">
+                  @{activeSession.nickname}
+                </div>
+                <div className="truncate font-mono text-[11px] text-slate-600 mt-0.5">
+                  {activeSession.email}
                 </div>
               </div>
-            ) : (
-              <div>
-                <div className="font-medium text-slate-700">
-                  Lokální režim prohlížeče
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Zobrazují se výhradně předměty, úkoly a zápisy vašeho účtu.
+              </p>
+
+              {activeSession.isFirebaseAuth && !activeSession.isEmailVerified && (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-900 space-y-1.5">
+                  <div>
+                    Potvrďte svůj e-mail pro plnou cloudovou synchronizaci mezi zařízeními.
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleRefreshEmailVerification}
+                      className="px-2 py-1 text-[11px] font-medium bg-white border border-amber-300 rounded hover:bg-amber-100 transition-colors"
+                    >
+                      Hotovo, zkontrolovat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResendVerificationEmail}
+                      className="px-2 py-1 text-[11px] font-medium text-amber-800 hover:underline"
+                    >
+                      Znovu poslat e-mail
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                  Přihlaste se účtem Google pro synchronizaci mezi zařízeními ve vaší privátní Firebase databázi.
-                </p>
+              )}
+
+              <div className="flex items-center gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="px-2.5 py-1 text-[11px] font-medium text-[#003865] bg-sky-50 rounded hover:bg-sky-100 transition-colors whitespace-nowrap"
+                >
+                  Přepnout účet
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="px-2.5 py-1 text-[11px] font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 transition-colors whitespace-nowrap"
+                >
+                  Odhlásit se
+                </button>
               </div>
-            )}
+            </div>
             {authError && (
               <p className="text-xs text-red-600 font-medium">{authError}</p>
             )}
@@ -1704,9 +1801,24 @@ function StudyOrganizerWorkspace() {
 
         {/* Main Content Viewport */}
         <main className="flex-1 p-6 lg:p-8 space-y-6 min-w-0">
-          {isSeedingCloud && (
+          {authNotice && (
+            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-md flex items-center justify-between gap-3 text-xs text-emerald-900">
+              <span>{authNotice}</span>
+              <button
+                type="button"
+                onClick={() => setAuthNotice(null)}
+                className="text-emerald-700 hover:text-emerald-950 font-medium shrink-0"
+              >
+                Zavřít
+              </button>
+            </div>
+          )}
+
+          {(isSeedingCloud || isLoadingUserCloud) && (
             <div className="p-4 bg-sky-50 border border-sky-200 rounded-md text-xs text-sky-900">
-              Inicializuji vaši privátní databázi a nahrávám předměty 1. semestru...
+              {isSeedingCloud
+                ? 'Připravuji váš osobní studijní profil a výchozí předměty 1. semestru...'
+                : 'Načítám vaše osobní studijní záznamy...'}
             </div>
           )}
 

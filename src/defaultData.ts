@@ -8,10 +8,20 @@ import {
 
 export const DEFAULT_SEMESTER_ID = 'sem_1_podzim_2026';
 
+export function sanitizeOwnerKey(ownerId: string): string {
+  const cleaned = ownerId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+  return cleaned || 'user';
+}
+
+export function getDefaultSemesterId(ownerId: string): string {
+  return `sem_1_podzim_${sanitizeOwnerKey(ownerId)}`;
+}
+
 export function getInitialSemesters(ownerId: string): Semester[] {
+  const semId = getDefaultSemesterId(ownerId);
   return [
     {
-      id: DEFAULT_SEMESTER_ID,
+      id: semId,
       ownerId,
       title: '1. semestr',
       academicYear: '2026/2027',
@@ -21,10 +31,14 @@ export function getInitialSemesters(ownerId: string): Semester[] {
   ];
 }
 
-export function getInitialCourses(ownerId: string, semesterId = DEFAULT_SEMESTER_ID): Course[] {
+export function getInitialCourses(
+  ownerId: string,
+  semesterId = getDefaultSemesterId(ownerId)
+): Course[] {
+  const key = sanitizeOwnerKey(ownerId);
   return [
     {
-      id: 'course_AI001',
+      id: `course_AI001_${key}`,
       ownerId,
       semesterId,
       code: 'AI001',
@@ -38,7 +52,7 @@ export function getInitialCourses(ownerId: string, semesterId = DEFAULT_SEMESTER
       order: 1,
     },
     {
-      id: 'course_ISKB02',
+      id: `course_ISKB02_${key}`,
       ownerId,
       semesterId,
       code: 'ISKB02',
@@ -52,7 +66,7 @@ export function getInitialCourses(ownerId: string, semesterId = DEFAULT_SEMESTER
       order: 2,
     },
     {
-      id: 'course_ISKB03',
+      id: `course_ISKB03_${key}`,
       ownerId,
       semesterId,
       code: 'ISKB03',
@@ -66,7 +80,7 @@ export function getInitialCourses(ownerId: string, semesterId = DEFAULT_SEMESTER
       order: 3,
     },
     {
-      id: 'course_ISKB04',
+      id: `course_ISKB04_${key}`,
       ownerId,
       semesterId,
       code: 'ISKB04',
@@ -80,7 +94,7 @@ export function getInitialCourses(ownerId: string, semesterId = DEFAULT_SEMESTER
       order: 4,
     },
     {
-      id: 'course_ISKB08',
+      id: `course_ISKB08_${key}`,
       ownerId,
       semesterId,
       code: 'ISKB08',
@@ -94,7 +108,7 @@ export function getInitialCourses(ownerId: string, semesterId = DEFAULT_SEMESTER
       order: 5,
     },
     {
-      id: 'course_ISKB60',
+      id: `course_ISKB60_${key}`,
       ownerId,
       semesterId,
       code: 'ISKB60',
@@ -104,11 +118,11 @@ export function getInitialCourses(ownerId: string, semesterId = DEFAULT_SEMESTER
       scheduleSummary: '',
       completionType: 'Zápočet',
       credits: 4,
-      isCompleted: true,
+      isCompleted: false,
       order: 6,
     },
     {
-      id: 'course_ISKB65',
+      id: `course_ISKB65_${key}`,
       ownerId,
       semesterId,
       code: 'ISKB65',
@@ -122,7 +136,7 @@ export function getInitialCourses(ownerId: string, semesterId = DEFAULT_SEMESTER
       order: 7,
     },
     {
-      id: 'course_PHK0001',
+      id: `course_PHK0001_${key}`,
       ownerId,
       semesterId,
       code: 'PHK0001',
@@ -138,14 +152,23 @@ export function getInitialCourses(ownerId: string, semesterId = DEFAULT_SEMESTER
   ];
 }
 
-export function getInitialTopics(_ownerId: string, _semesterId = DEFAULT_SEMESTER_ID): CourseTopic[] {
+export function getInitialTopics(
+  _ownerId: string,
+  _semesterId?: string
+): CourseTopic[] {
   return [];
 }
 
-export function getInitialTasks(_ownerId: string, _semesterId = DEFAULT_SEMESTER_ID): CourseTask[] {
+export function getInitialTasks(
+  _ownerId: string,
+  _semesterId?: string
+): CourseTask[] {
   return [];
 }
 
-export function getInitialDates(_ownerId: string, _semesterId = DEFAULT_SEMESTER_ID): CourseDate[] {
+export function getInitialDates(
+  _ownerId: string,
+  _semesterId?: string
+): CourseDate[] {
   return [];
 }
