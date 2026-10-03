@@ -165,20 +165,27 @@ function StudyOrganizerWorkspace() {
     null
   );
 
-  // Listen to Firebase Auth state & restore active session only if explicitly signed in via AuthScreen
+  // Listen to Firebase Auth state & restore active session ONLY if explicitly signed in via AuthScreen (v3)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      const savedLocal = getSavedActiveLocalSession();
-      if (currentUser && savedLocal && savedLocal.uid === currentUser.uid) {
-        const session = buildSessionFromFirebaseUser(
-          currentUser,
-          savedLocal.nickname
-        );
-        setActiveSession(session);
-        saveActiveLocalSession(session);
-      } else if (savedLocal && !savedLocal.isFirebaseAuth) {
-        setActiveSession(savedLocal);
+      const savedExplicit = getSavedActiveLocalSession();
+      if (savedExplicit) {
+        if (
+          savedExplicit.isFirebaseAuth &&
+          currentUser &&
+          savedExplicit.uid === currentUser.uid
+        ) {
+          const session = buildSessionFromFirebaseUser(
+            currentUser,
+            savedExplicit.nickname
+          );
+          setActiveSession(session);
+        } else if (!savedExplicit.isFirebaseAuth) {
+          setActiveSession(savedExplicit);
+        } else {
+          setActiveSession(null);
+        }
       } else {
         setActiveSession(null);
       }
@@ -1515,11 +1522,11 @@ function StudyOrganizerWorkspace() {
           <button
             type="button"
             onClick={handleSignOut}
-            title={`Přihlášen: ${activeSession.nickname} (${activeSession.email})`}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition-colors whitespace-nowrap"
+            title={`Přihlášený účet: @${activeSession.nickname} (${activeSession.email}) — Kliknutím přejdete na Přihlášení / Registraci`}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 border border-slate-300 rounded-md hover:bg-slate-200 transition-colors whitespace-nowrap"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Odhlásit ({activeSession.nickname})</span>
+            <span>@{activeSession.nickname} · Odhlásit / Jiný účet</span>
           </button>
         </div>
       </header>

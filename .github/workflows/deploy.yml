@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -24,13 +24,40 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build fresh production bundle from src
+        run: |
+          mkdir -p /tmp/gh-build
+          cp -r index.html vite.config.ts tsconfig.json firebase-applet-config.json src /tmp/gh-build/
+          cd /tmp/gh-build
+          npm init -y
+          npm pkg set type="module"
+          npm install --no-audit --no-fund vite@^6.2.0 @vitejs/plugin-react@^4.3.4 @tailwindcss/vite@^4.0.9 tailwindcss@^4.0.9 react@^19.0.0 react-dom@^19.0.0 firebase@^11.4.0 lucide-react@^0.475.0
+          npx vite build --outDir dist
+          cp dist/index.html dist/404.html
+          rm -rf "$GITHUB_WORKSPACE/dist" "$GITHUB_WORKSPACE/docs"
+          cp -r dist "$GITHUB_WORKSPACE/dist"
+          cp -r dist "$GITHUB_WORKSPACE/docs"
+
+      - name: Update /docs folder in repository for branch-based Pages
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs
+          git diff --staged --quiet || git commit -m "chore: update compiled /docs from src [skip ci]" && git push
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./docs
+          path: ./dist
 
       - name: Deploy to GitHub Pages
         id: deployment

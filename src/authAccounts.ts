@@ -50,8 +50,8 @@ export interface UserStudyDataBundle {
   dates: CourseDate[];
 }
 
-const ACCOUNTS_REGISTRY_KEY = 'studijni_denik_accounts_registry_v1';
-const ACTIVE_LOCAL_SESSION_KEY = 'studijni_denik_active_session_v1';
+const ACCOUNTS_REGISTRY_KEY = 'studijni_denik_accounts_registry_v2';
+const ACTIVE_LOCAL_SESSION_KEY = 'studijni_denik_explicit_session_v3';
 
 function simpleHash(password: string): string {
   let hash = 5381;
