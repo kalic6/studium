@@ -51,6 +51,7 @@ import {
   VALIDATION_LIMITS,
   clampString,
   generateSafeId,
+  stripHtmlToText,
 } from './types';
 import {
   DEFAULT_SEMESTER_ID,
@@ -61,6 +62,7 @@ import {
   getInitialDates,
 } from './defaultData';
 import { CourseAccordionItem } from './components/CourseAccordionItem';
+import { RichNoteEditor } from './components/RichNoteEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 type MainNavView = 'courses' | 'agenda' | 'notes' | 'overview';
@@ -199,6 +201,14 @@ function StudyOrganizerWorkspace() {
   const [quickTaskPriority, setQuickTaskPriority] =
     useState<TaskPriority>('Střední');
   const [quickTaskDesc, setQuickTaskDesc] = useState('');
+  const [quickTaskWorkNotes, setQuickTaskWorkNotes] = useState('');
+  const [agendaOpenNotesTaskId, setAgendaOpenNotesTaskId] = useState<string | null>(
+    null
+  );
+  const [agendaWorkNotesDraft, setAgendaWorkNotesDraft] = useState('');
+  const [agendaWorkNotesSavedId, setAgendaWorkNotesSavedId] = useState<string | null>(
+    null
+  );
 
   // Persist local state when signed out
   useEffect(() => {
@@ -293,6 +303,7 @@ function StudyOrganizerWorkspace() {
             title: task.title,
             dueDate: task.dueDate,
             description: task.description,
+            workNotes: task.workNotes || '',
             priority: task.priority,
             isCompleted: task.isCompleted,
             createdAt: serverTimestamp(),
@@ -1031,12 +1042,17 @@ function StudyOrganizerWorkspace() {
       title: string;
       dueDate: string;
       description: string;
+      workNotes?: string;
       priority: TaskPriority;
     }
   ) => {
     const course = courses.find((c) => c.id === courseId);
     if (!course) return;
     const newId = generateSafeId('task');
+    const cleanWorkNotes = (payload.workNotes || '').slice(
+      0,
+      VALIDATION_LIMITS.TASK_WORK_NOTES_MAX
+    );
 
     if (user) {
       try {
@@ -1050,6 +1066,7 @@ function StudyOrganizerWorkspace() {
             payload.description,
             VALIDATION_LIMITS.TASK_DESC_MAX
           ),
+          workNotes: cleanWorkNotes,
           priority: payload.priority,
           isCompleted: false,
           createdAt: serverTimestamp(),
@@ -1072,6 +1089,7 @@ function StudyOrganizerWorkspace() {
             payload.description,
             VALIDATION_LIMITS.TASK_DESC_MAX
           ),
+          workNotes: cleanWorkNotes,
           priority: payload.priority,
           isCompleted: false,
         },
@@ -1084,7 +1102,12 @@ function StudyOrganizerWorkspace() {
     updates: Partial<
       Pick<
         CourseTask,
-        'title' | 'dueDate' | 'description' | 'priority' | 'isCompleted'
+        | 'title'
+        | 'dueDate'
+        | 'description'
+        | 'workNotes'
+        | 'priority'
+        | 'isCompleted'
       >
     >
   ) => {
@@ -1093,12 +1116,22 @@ function StudyOrganizerWorkspace() {
 
     const isToggleOnly =
       Object.keys(updates).length === 1 && updates.isCompleted !== undefined;
+    const isWorkNotesOnly =
+      Object.keys(updates).length === 1 && updates.workNotes !== undefined;
 
     if (user) {
       try {
         if (isToggleOnly) {
           await updateDoc(doc(db, 'tasks', taskId), {
             isCompleted: Boolean(updates.isCompleted),
+            updatedAt: serverTimestamp(),
+          });
+        } else if (isWorkNotesOnly) {
+          await updateDoc(doc(db, 'tasks', taskId), {
+            workNotes: (updates.workNotes ?? '').slice(
+              0,
+              VALIDATION_LIMITS.TASK_WORK_NOTES_MAX
+            ),
             updatedAt: serverTimestamp(),
           });
         } else {
@@ -1115,6 +1148,11 @@ function StudyOrganizerWorkspace() {
               updates.description ?? existingTask.description,
               VALIDATION_LIMITS.TASK_DESC_MAX
             ),
+            workNotes: (
+              updates.workNotes ??
+              existingTask.workNotes ??
+              ''
+            ).slice(0, VALIDATION_LIMITS.TASK_WORK_NOTES_MAX),
             priority: updates.priority ?? existingTask.priority,
             isCompleted: updates.isCompleted ?? existingTask.isCompleted,
             updatedAt: serverTimestamp(),
@@ -1140,6 +1178,10 @@ function StudyOrganizerWorkspace() {
                 description: clampString(
                   updates.description ?? t.description,
                   VALIDATION_LIMITS.TASK_DESC_MAX
+                ),
+                workNotes: (updates.workNotes ?? t.workNotes ?? '').slice(
+                  0,
+                  VALIDATION_LIMITS.TASK_WORK_NOTES_MAX
                 ),
                 priority: updates.priority ?? t.priority,
                 isCompleted: updates.isCompleted ?? t.isCompleted,
@@ -1950,73 +1992,165 @@ function StudyOrganizerWorkspace() {
                           })
                           .map((task) => {
                             const c = courseById[task.courseId];
+                            const hasWorkNotes =
+                              stripHtmlToText(task.workNotes || '').length > 0;
+                            const isNotesOpen = agendaOpenNotesTaskId === task.id;
                             return (
                               <div
                                 key={task.id}
-                                className="p-4 flex items-start justify-between gap-3 hover:bg-slate-50"
+                                className="p-4 space-y-3 hover:bg-slate-50/70 transition-colors"
                               >
-                                <div className="flex items-start gap-3 min-w-0">
-                                  <input
-                                    type="checkbox"
-                                    checked={task.isCompleted}
-                                    onChange={() =>
-                                      handleUpdateTask(task.id, {
-                                        isCompleted: !task.isCompleted,
-                                      })
-                                    }
-                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-[#003865]"
-                                  />
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-                                      <span className="font-mono font-semibold text-slate-800">
-                                        {c?.code || 'Předmět'}
-                                      </span>
-                                      <span aria-hidden="true">·</span>
-                                      <span className="truncate">
-                                        {c?.name || ''}
-                                      </span>
-                                    </div>
-                                    <p
-                                      className={`text-sm font-medium mt-0.5 ${
-                                        task.isCompleted
-                                          ? 'text-slate-400 line-through'
-                                          : 'text-slate-900'
-                                      }`}
-                                    >
-                                      {task.title}
-                                    </p>
-                                    {task.description && (
-                                      <p className="text-xs text-slate-600 mt-0.5">
-                                        {task.description}
-                                      </p>
-                                    )}
-                                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                                      <span>
-                                        Termín:{' '}
-                                        <span className="font-mono tabular-nums text-slate-800">
-                                          {task.dueDate || 'Neurčeno'}
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                                    <input
+                                      type="checkbox"
+                                      checked={task.isCompleted}
+                                      onChange={() =>
+                                        handleUpdateTask(task.id, {
+                                          isCompleted: !task.isCompleted,
+                                        })
+                                      }
+                                      className="mt-1 h-4 w-4 rounded border-slate-300 text-[#003865]"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                                        <span className="font-mono font-semibold text-slate-800">
+                                          {c?.code || 'Předmět'}
                                         </span>
-                                      </span>
-                                      <span aria-hidden="true">·</span>
-                                      <span
-                                        className={
-                                          task.priority === 'Vysoká'
-                                            ? 'text-red-700 font-medium'
-                                            : 'text-slate-500'
-                                        }
+                                        <span aria-hidden="true">·</span>
+                                        <span className="truncate">
+                                          {c?.name || ''}
+                                        </span>
+                                      </div>
+                                      <p
+                                        className={`text-sm font-medium mt-0.5 ${
+                                          task.isCompleted
+                                            ? 'text-slate-400 line-through'
+                                            : 'text-slate-900'
+                                        }`}
                                       >
-                                        Priorita: {task.priority}
-                                      </span>
+                                        {task.title}
+                                      </p>
+                                      {task.description && (
+                                        <p className="text-xs text-slate-600 mt-0.5">
+                                          {task.description}
+                                        </p>
+                                      )}
+                                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
+                                        <span>
+                                          Termín:{' '}
+                                          <span className="font-mono tabular-nums text-slate-800">
+                                            {task.dueDate || 'Neurčeno'}
+                                          </span>
+                                        </span>
+                                        <span aria-hidden="true">·</span>
+                                        <span
+                                          className={
+                                            task.priority === 'Vysoká'
+                                              ? 'text-red-700 font-medium'
+                                              : 'text-slate-500'
+                                          }
+                                        >
+                                          Priorita: {task.priority}
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (isNotesOpen) {
+                                          setAgendaOpenNotesTaskId(null);
+                                        } else {
+                                          setAgendaOpenNotesTaskId(task.id);
+                                          setAgendaWorkNotesDraft(
+                                            task.workNotes || ''
+                                          );
+                                        }
+                                      }}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                                        isNotesOpen
+                                          ? 'bg-[#003865] text-white'
+                                          : hasWorkNotes
+                                          ? 'text-[#003865] bg-sky-50 hover:bg-sky-100'
+                                          : 'text-slate-600 bg-slate-100 hover:bg-slate-200'
+                                      }`}
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                      <span>
+                                        {hasWorkNotes
+                                          ? 'Poznámky k vypracování'
+                                          : '+ Poznámky'}
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteTask(task.id)}
+                                      className="p-1 text-slate-400 hover:text-red-600 shrink-0"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteTask(task.id)}
-                                  className="p-1 text-slate-400 hover:text-red-600 shrink-0"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+
+                                {isNotesOpen && (
+                                  <form
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      handleUpdateTask(task.id, {
+                                        workNotes: agendaWorkNotesDraft,
+                                      });
+                                      setAgendaWorkNotesSavedId(task.id);
+                                      setTimeout(() => {
+                                        setAgendaWorkNotesSavedId((prev) =>
+                                          prev === task.id ? null : prev
+                                        );
+                                      }, 2000);
+                                    }}
+                                    className="pl-7 pt-2 space-y-2.5"
+                                  >
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-semibold text-slate-800">
+                                          Poznámky při vypracovávání úkolu
+                                        </span>
+                                        {agendaWorkNotesSavedId === task.id && (
+                                          <span className="text-xs font-medium text-emerald-700">
+                                            · Uloženo
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setAgendaOpenNotesTaskId(null)
+                                          }
+                                          className="px-2 py-1 text-xs text-slate-500 hover:text-slate-900"
+                                        >
+                                          Skrýt
+                                        </button>
+                                        <button
+                                          type="submit"
+                                          className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-white bg-[#003865] rounded hover:bg-[#002848] whitespace-nowrap"
+                                        >
+                                          <Save className="w-3.5 h-3.5" />
+                                          Uložit poznámky
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <RichNoteEditor
+                                      value={agendaWorkNotesDraft}
+                                      onChange={setAgendaWorkNotesDraft}
+                                      placeholder="Pište si sem postup vypracování, osnovu, literaturu nebo poznámky k úkolu..."
+                                      minHeightClass="min-h-[140px]"
+                                      maxLength={
+                                        VALIDATION_LIMITS.TASK_WORK_NOTES_MAX
+                                      }
+                                    />
+                                  </form>
+                                )}
                               </div>
                             );
                           })}
@@ -2277,13 +2411,12 @@ function StudyOrganizerWorkspace() {
                             </div>
                           )}
 
-                          <textarea
-                            rows={14}
+                          <RichNoteEditor
                             value={globalNoteDraft}
-                            onChange={(e) => setGlobalNoteDraft(e.target.value)}
-                            placeholder="Zde pište studijní zápis k probíranému tématu..."
+                            onChange={setGlobalNoteDraft}
+                            placeholder="Zde pište studijní zápis k probíranému tématu (můžete použít zvýraznění, tučné písmo, kurzívu či odrážky)..."
+                            minHeightClass="min-h-[320px]"
                             maxLength={VALIDATION_LIMITS.TOPIC_NOTES_MAX}
-                            className="w-full px-4 py-3 text-sm leading-relaxed bg-slate-50/60 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:border-[#003865]"
                           />
                         </form>
                       ) : (
@@ -2711,10 +2844,12 @@ function StudyOrganizerWorkspace() {
                   dueDate: quickTaskDueDate,
                   priority: quickTaskPriority,
                   description: quickTaskDesc,
+                  workNotes: quickTaskWorkNotes,
                 });
                 setQuickTaskTitle('');
                 setQuickTaskDueDate('');
                 setQuickTaskDesc('');
+                setQuickTaskWorkNotes('');
                 setShowQuickTaskModal(false);
               }}
               className="space-y-3.5"
@@ -2780,14 +2915,27 @@ function StudyOrganizerWorkspace() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Poznámka / zadání
+                  Zadání / požadavky
                 </label>
-                <textarea
-                  rows={2}
+                <input
+                  type="text"
                   value={quickTaskDesc}
                   onChange={(e) => setQuickTaskDesc(e.target.value)}
                   maxLength={VALIDATION_LIMITS.TASK_DESC_MAX}
+                  placeholder="Rozsah, formát, požadavky..."
                   className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Poznámky při vypracovávání (volitelné)
+                </label>
+                <RichNoteEditor
+                  value={quickTaskWorkNotes}
+                  onChange={setQuickTaskWorkNotes}
+                  placeholder="Poznámky k vypracování, osnova, literatura..."
+                  minHeightClass="min-h-[110px]"
+                  maxLength={VALIDATION_LIMITS.TASK_WORK_NOTES_MAX}
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">

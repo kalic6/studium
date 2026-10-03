@@ -22,3 +22,73 @@
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* Rich Note Editor Content Styling */
+.rich-note-content h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.rich-note-content h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-top: 0.6rem;
+  margin-bottom: 0.25rem;
+}
+
+.rich-note-content p {
+  margin-bottom: 0.45rem;
+}
+
+.rich-note-content ul {
+  list-style-type: disc;
+  padding-left: 1.4rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.rich-note-content ol {
+  list-style-type: decimal;
+  padding-left: 1.4rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.rich-note-content li {
+  margin-bottom: 0.2rem;
+}
+
+.rich-note-content blockquote {
+  border-left: 3px solid #003865;
+  background-color: #f1f5f9;
+  padding: 0.4rem 0.75rem;
+  margin: 0.5rem 0;
+  border-radius: 0.25rem;
+  color: #1e293b;
+}
+
+.rich-note-content b,
+.rich-note-content strong {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.rich-note-content i,
+.rich-note-content em {
+  font-style: italic;
+}
+
+.rich-note-content u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.rich-note-content:empty:before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}

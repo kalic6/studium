@@ -7,6 +7,7 @@ import {
   Edit3,
   FileText,
   Save,
+  X,
 } from 'lucide-react';
 import {
   Course,
@@ -18,7 +19,9 @@ import {
   TaskPriority,
   VALIDATION_LIMITS,
   clampString,
+  stripHtmlToText,
 } from '../types';
+import { RichNoteEditor } from './RichNoteEditor';
 
 interface CourseAccordionItemProps {
   course: Course;
@@ -60,13 +63,17 @@ interface CourseAccordionItemProps {
       title: string;
       dueDate: string;
       description: string;
+      workNotes?: string;
       priority: TaskPriority;
     }
   ) => void;
   onUpdateTask: (
     taskId: string,
     updates: Partial<
-      Pick<CourseTask, 'title' | 'dueDate' | 'description' | 'priority' | 'isCompleted'>
+      Pick<
+        CourseTask,
+        'title' | 'dueDate' | 'description' | 'workNotes' | 'priority' | 'isCompleted'
+      >
     >
   ) => void;
   onDeleteTask: (taskId: string) => void;
@@ -158,6 +165,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('Střední');
   const [newTaskDesc, setNewTaskDesc] = useState('');
+  const [newTaskWorkNotes, setNewTaskWorkNotes] = useState('');
 
   // Edit task inline state
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -165,6 +173,11 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
   const [editTaskDueDate, setEditTaskDueDate] = useState('');
   const [editTaskPriority, setEditTaskPriority] = useState<TaskPriority>('Střední');
   const [editTaskDesc, setEditTaskDesc] = useState('');
+
+  // Task working notes state
+  const [openWorkNotesTaskId, setOpenWorkNotesTaskId] = useState<string | null>(null);
+  const [taskWorkNotesDraft, setTaskWorkNotesDraft] = useState<string>('');
+  const [taskWorkNotesSavedId, setTaskWorkNotesSavedId] = useState<string | null>(null);
 
   // Add new course date form state
   const [showNewDateForm, setShowNewDateForm] = useState(false);
@@ -262,11 +275,13 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
       title: cleanTitle,
       dueDate: clampString(newTaskDueDate, VALIDATION_LIMITS.DATE_STR_MAX),
       description: clampString(newTaskDesc, VALIDATION_LIMITS.TASK_DESC_MAX),
+      workNotes: newTaskWorkNotes.slice(0, VALIDATION_LIMITS.TASK_WORK_NOTES_MAX),
       priority: newTaskPriority,
     });
     setNewTaskTitle('');
     setNewTaskDueDate('');
     setNewTaskDesc('');
+    setNewTaskWorkNotes('');
     setNewTaskPriority('Střední');
     setShowNewTaskForm(false);
   };
@@ -291,6 +306,26 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
       isCompleted: task.isCompleted,
     });
     setEditingTaskId(null);
+  };
+
+  const toggleTaskWorkNotes = (task: CourseTask) => {
+    if (openWorkNotesTaskId === task.id) {
+      setOpenWorkNotesTaskId(null);
+    } else {
+      setOpenWorkNotesTaskId(task.id);
+      setTaskWorkNotesDraft(task.workNotes || '');
+    }
+  };
+
+  const handleSaveTaskWorkNotes = (e: React.FormEvent, task: CourseTask) => {
+    e.preventDefault();
+    onUpdateTask(task.id, {
+      workNotes: taskWorkNotesDraft.slice(0, VALIDATION_LIMITS.TASK_WORK_NOTES_MAX),
+    });
+    setTaskWorkNotesSavedId(task.id);
+    setTimeout(() => {
+      setTaskWorkNotesSavedId((prev) => (prev === task.id ? null : prev));
+    }, 2000);
   };
 
   const handleCreateDate = (e: React.FormEvent) => {
@@ -354,6 +389,7 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
       credits: Math.max(0, Math.min(60, Number(courseCredits) || 0)),
       isCompleted: course.isCompleted,
     });
+    setShowCourseDetailsEditor(false);
     setCourseSavedBanner(true);
     setTimeout(() => setCourseSavedBanner(false), 2000);
   };
@@ -434,13 +470,19 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
               e.stopPropagation();
               if (!isExpanded) {
                 onToggleExpand();
+                setShowCourseDetailsEditor(true);
+              } else {
+                setShowCourseDetailsEditor((prev) => !prev);
               }
-              setShowCourseDetailsEditor((prev) => !prev);
             }}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#003865] hover:bg-sky-50 rounded transition-colors whitespace-nowrap"
+            className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+              isExpanded && showCourseDetailsEditor
+                ? 'bg-[#003865] text-white'
+                : 'text-[#003865] hover:bg-sky-50'
+            }`}
           >
             <Edit3 className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Upravit předmět</span>
+            <span>Upravit předmět</span>
           </button>
 
           <button
@@ -493,152 +535,139 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
       {isExpanded && (
         <div className="border-t border-slate-200 px-5 py-5 space-y-5 bg-slate-50/40">
           {/* =============================================================== */}
-          {/* ALWAYS-VISIBLE INLINE BAR FOR VYUČUJÍCÍ, MÍSTNOST, ROZVRH       */}
+          {/* POLÍČKA PRO ÚPRAVU PŘEDMĚTU (Dostupná JEN po rozkliknutí        */}
+          {/* tlačítka "Upravit předmět")                                     */}
           {/* =============================================================== */}
-          <form
-            onSubmit={handleSaveCourseDetails}
-            className="bg-white border border-slate-200 rounded-md p-4 space-y-3"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-900">
-                  Informace o předmětu (vyučující, místnost, čas výuky, ukončení)
-                </span>
-                {courseSavedBanner && (
-                  <span className="text-xs font-medium text-emerald-700">
-                    · Uloženo
-                  </span>
-                )}
-              </div>
+          {showCourseDetailsEditor && (
+            <form
+              onSubmit={handleSaveCourseDetails}
+              className="bg-white border border-slate-200 rounded-md p-4 space-y-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-900">
+                    Úprava informací o předmětu
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Zadejte nebo upravte vyučujícího, místnost, pravidelný čas výuky, způsob ukončení či název předmětu.
+                  </p>
+                </div>
 
-              <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowCourseDetailsEditor((v) => !v)}
-                  className="text-xs text-slate-500 hover:text-slate-900 underline whitespace-nowrap"
+                  onClick={() => setShowCourseDetailsEditor(false)}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900"
                 >
-                  {showCourseDetailsEditor
-                    ? 'Skrýt úpravu kódu/názvu a smazání'
-                    : 'Upravit kód/název nebo smazat předmět'}
-                </button>
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#003865] rounded hover:bg-[#002848] transition-colors whitespace-nowrap"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  Uložit údaje předmětu
+                  <X className="w-4 h-4" />
+                  Zavřít úpravu
                 </button>
               </div>
-            </div>
 
-            {/* Primary Editable Row: Vyučující, Místnost, Čas/Rozvrh, Ukončení, Kredity */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-              <div className="lg:col-span-2">
-                <label className="block text-xs text-slate-600 mb-1">
-                  Vyučující
-                </label>
-                <input
-                  type="text"
-                  value={courseTeacher}
-                  onChange={(e) => setCourseTeacher(e.target.value)}
-                  placeholder="Zadejte jméno vyučujícího..."
-                  maxLength={VALIDATION_LIMITS.TEACHER_MAX}
-                  className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-600 mb-1">
-                  Místnost / učebna
-                </label>
-                <input
-                  type="text"
-                  value={courseRoom}
-                  onChange={(e) => setCourseRoom(e.target.value)}
-                  placeholder="např. A22 / Online"
-                  maxLength={VALIDATION_LIMITS.ROOM_MAX}
-                  className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-600 mb-1">
-                  Pravidelný termín výuky
-                </label>
-                <input
-                  type="text"
-                  value={courseSchedule}
-                  onChange={(e) => setCourseSchedule(e.target.value)}
-                  placeholder="např. Út 10:00–11:40"
-                  maxLength={VALIDATION_LIMITS.SCHEDULE_MAX}
-                  className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
                 <div>
                   <label className="block text-xs text-slate-600 mb-1">
-                    Ukončení
-                  </label>
-                  <select
-                    value={courseCompletionType}
-                    onChange={(e) =>
-                      setCourseCompletionType(e.target.value as CompletionType)
-                    }
-                    className="w-full px-2 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                  >
-                    <option value="Zkouška">Zkouška</option>
-                    <option value="Zápočet">Zápočet</option>
-                    <option value="Kolokvium">Kolokvium</option>
-                    <option value="Klasifikovaný zápočet">Klas. záp.</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">
-                    Kredity
+                    Kód předmětu *
                   </label>
                   <input
-                    type="number"
-                    min={0}
-                    max={60}
-                    value={courseCredits}
-                    onChange={(e) => setCourseCredits(Number(e.target.value))}
-                    className="w-full px-2.5 py-1.5 text-sm font-mono tabular-nums bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                    type="text"
+                    required
+                    value={courseCode}
+                    onChange={(e) => setCourseCode(e.target.value)}
+                    maxLength={VALIDATION_LIMITS.COURSE_CODE_MAX}
+                    className="w-full px-3 py-1.5 text-sm font-mono bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                  />
+                </div>
+                <div className="sm:col-span-3">
+                  <label className="block text-xs text-slate-600 mb-1">
+                    Název předmětu *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={courseName}
+                    onChange={(e) => setCourseName(e.target.value)}
+                    maxLength={VALIDATION_LIMITS.COURSE_NAME_MAX}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
                   />
                 </div>
               </div>
-            </div>
 
-            {/* Expandable Code, Name, and Delete Row */}
-            {showCourseDetailsEditor && (
-              <div className="pt-3 border-t border-slate-200 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+                <div className="lg:col-span-2">
+                  <label className="block text-xs text-slate-600 mb-1">
+                    Vyučující
+                  </label>
+                  <input
+                    type="text"
+                    value={courseTeacher}
+                    onChange={(e) => setCourseTeacher(e.target.value)}
+                    placeholder="Zadejte jméno vyučujícího..."
+                    maxLength={VALIDATION_LIMITS.TEACHER_MAX}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">
+                    Místnost / učebna
+                  </label>
+                  <input
+                    type="text"
+                    value={courseRoom}
+                    onChange={(e) => setCourseRoom(e.target.value)}
+                    placeholder="např. A22 / Online"
+                    maxLength={VALIDATION_LIMITS.ROOM_MAX}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">
+                    Pravidelný termín výuky
+                  </label>
+                  <input
+                    type="text"
+                    value={courseSchedule}
+                    onChange={(e) => setCourseSchedule(e.target.value)}
+                    placeholder="např. Út 10:00–11:40"
+                    maxLength={VALIDATION_LIMITS.SCHEDULE_MAX}
+                    className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs text-slate-600 mb-1">
-                      Kód předmětu *
+                      Ukončení
                     </label>
-                    <input
-                      type="text"
-                      required
-                      value={courseCode}
-                      onChange={(e) => setCourseCode(e.target.value)}
-                      maxLength={VALIDATION_LIMITS.COURSE_CODE_MAX}
-                      className="w-full px-3 py-1.5 text-sm font-mono bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
-                    />
+                    <select
+                      value={courseCompletionType}
+                      onChange={(e) =>
+                        setCourseCompletionType(e.target.value as CompletionType)
+                      }
+                      className="w-full px-2 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                    >
+                      <option value="Zkouška">Zkouška</option>
+                      <option value="Zápočet">Zápočet</option>
+                      <option value="Kolokvium">Kolokvium</option>
+                      <option value="Klasifikovaný zápočet">Klas. záp.</option>
+                    </select>
                   </div>
-                  <div className="sm:col-span-3">
+                  <div>
                     <label className="block text-xs text-slate-600 mb-1">
-                      Název předmětu *
+                      Kredity
                     </label>
                     <input
-                      type="text"
-                      required
-                      value={courseName}
-                      onChange={(e) => setCourseName(e.target.value)}
-                      maxLength={VALIDATION_LIMITS.COURSE_NAME_MAX}
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                      type="number"
+                      min={0}
+                      max={60}
+                      value={courseCredits}
+                      onChange={(e) => setCourseCredits(Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 text-sm font-mono tabular-nums bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
                     />
                   </div>
                 </div>
+              </div>
 
-                <div className="flex items-center justify-between pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                <div>
                   {!confirmDeleteCourse ? (
                     <button
                       type="button"
@@ -670,9 +699,26 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                     </div>
                   )}
                 </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCourseDetailsEditor(false)}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900"
+                  >
+                    Zrušit
+                  </button>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium text-white bg-[#003865] rounded hover:bg-[#002848] transition-colors whitespace-nowrap"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    Uložit údaje předmětu
+                  </button>
+                </div>
               </div>
-            )}
-          </form>
+            </form>
+          )}
 
           {/* Sub-Navigation Bar for Topics/Notes, Tasks, and Course Dates */}
           <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-slate-200">
@@ -711,6 +757,24 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                 Termíny předmětu ({dates.length})
               </button>
             </div>
+
+            {!showCourseDetailsEditor && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+                {courseSavedBanner && (
+                  <span className="text-emerald-700 font-medium">
+                    Údaje uloženy ·
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowCourseDetailsEditor(true)}
+                  className="inline-flex items-center gap-1 text-[#003865] hover:underline font-medium whitespace-nowrap"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  Upravit předmět (vyučující, místnost, rozvrh)
+                </button>
+              </div>
+            )}
           </div>
 
           {/* =============================================================== */}
@@ -778,13 +842,12 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                     <label className="block text-xs text-slate-600 mb-1">
                       Zápis / poznámky k tématu (volitelné)
                     </label>
-                    <textarea
-                      rows={4}
+                    <RichNoteEditor
                       value={newTopicNotes}
-                      onChange={(e) => setNewTopicNotes(e.target.value)}
-                      placeholder="Zde si můžete rovnou zapsat poznámky z přednášky nebo četby..."
+                      onChange={setNewTopicNotes}
+                      placeholder="Zde si můžete rovnou zapsat a naformátovat poznámky z přednášky nebo četby..."
+                      minHeightClass="min-h-[140px]"
                       maxLength={VALIDATION_LIMITS.TOPIC_NOTES_MAX}
-                      className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
                     />
                   </div>
                   <div className="flex items-center justify-end gap-2">
@@ -870,8 +933,8 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                               </span>
                               <span aria-hidden="true">·</span>
                               <span className="font-mono tabular-nums">
-                                {topic.notes.trim().length > 0
-                                  ? `${topic.notes.trim().length} zn.`
+                                {stripHtmlToText(topic.notes).length > 0
+                                  ? `${stripHtmlToText(topic.notes).length} zn.`
                                   : 'Bez zápisu'}
                               </span>
                             </div>
@@ -965,61 +1028,26 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                           </div>
                         </div>
 
-                        {/* Formatting helper buttons for structured academic notes */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleInsertMarkdownTemplate('## Hlavní myšlenky přednášky\n- ')
-                              }
-                              className="px-2 py-1 text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition-colors whitespace-nowrap"
-                            >
-                              + Nadpis sekce
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleInsertMarkdownTemplate('- **Klíčový pojem**: definice...')
-                              }
-                              className="px-2 py-1 text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition-colors whitespace-nowrap"
-                            >
-                              + Klíčový pojem
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleInsertMarkdownTemplate(
-                                  '### Shrnutí ke zkoušce\n1. \n2. '
-                                )
-                              }
-                              className="px-2 py-1 text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition-colors whitespace-nowrap"
-                            >
-                              + Shrnutí ke zkoušce
-                            </button>
+                        {noteSavedNotice && (
+                          <div className="text-xs text-emerald-700 font-medium">
+                            Zápis k tématu byl uložen.
                           </div>
-                          {noteSavedNotice && (
-                            <span className="text-xs text-emerald-700 font-medium">
-                              Zápis uložen
-                            </span>
-                          )}
-                        </div>
+                        )}
 
-                        <textarea
-                          rows={10}
+                        <RichNoteEditor
                           value={noteDraft}
-                          onChange={(e) => setNoteDraft(e.target.value)}
-                          placeholder="Zde pište poznámky k probíranému tématu, definice, literaturu a otázky ke zkoušce..."
+                          onChange={setNoteDraft}
+                          placeholder="Zde pište poznámky k probíranému tématu (označte text pro zvýraznění, tučné písmo, kurzívu nebo odrážky)..."
+                          minHeightClass="min-h-[240px]"
                           maxLength={VALIDATION_LIMITS.TOPIC_NOTES_MAX}
-                          className="w-full px-3.5 py-3 text-sm leading-relaxed bg-slate-50/60 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:border-[#003865] font-sans"
                         />
 
                         <div className="flex items-center justify-between text-xs text-slate-400">
                           <span>
-                            Tip: Změny uložíte tlačítkem „Uložit zápis“.
+                            Tip: Označte text myší a klikněte na Zvýraznění, Tučné, Kurzívu nebo Odrážky.
                           </span>
                           <span className="font-mono tabular-nums">
-                            {noteDraft.length} / {VALIDATION_LIMITS.TOPIC_NOTES_MAX} znaků
+                            {stripHtmlToText(noteDraft).length} znaků textu
                           </span>
                         </div>
                       </form>
@@ -1111,15 +1139,27 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                   </div>
                   <div>
                     <label className="block text-xs text-slate-600 mb-1">
-                      Požadavky / poznámka k odevzdání
+                      Požadavky / zadání k odevzdání
                     </label>
-                    <textarea
-                      rows={2}
+                    <input
+                      type="text"
                       value={newTaskDesc}
                       onChange={(e) => setNewTaskDesc(e.target.value)}
                       placeholder="Rozsah, formát, odkaz na odevzdávárnu..."
                       maxLength={VALIDATION_LIMITS.TASK_DESC_MAX}
                       className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded focus:outline-none focus:border-[#003865]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">
+                      Poznámky při vypracovávání (volitelné — lze upravovat i později u úkolu)
+                    </label>
+                    <RichNoteEditor
+                      value={newTaskWorkNotes}
+                      onChange={setNewTaskWorkNotes}
+                      placeholder="Sem si můžete psát poznámky při vypracovávání úkolu, osnovu, literaturu nebo nápady..."
+                      minHeightClass="min-h-[120px]"
+                      maxLength={VALIDATION_LIMITS.TASK_WORK_NOTES_MAX}
                     />
                   </div>
                   <div className="flex items-center justify-end gap-2">
@@ -1221,90 +1261,159 @@ export const CourseAccordionItem: React.FC<CourseAccordionItemProps> = ({
                       );
                     }
 
+                    const hasWorkNotes =
+                      stripHtmlToText(task.workNotes || '').length > 0;
+                    const isWorkNotesOpen = openWorkNotesTaskId === task.id;
+
                     return (
                       <div
                         key={task.id}
-                        className="p-3.5 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors"
+                        className="p-3.5 space-y-3 hover:bg-slate-50/70 transition-colors"
                       >
-                        <div className="flex items-start gap-3 min-w-0 flex-1">
-                          <input
-                            type="checkbox"
-                            checked={task.isCompleted}
-                            onChange={() =>
-                              onUpdateTask(task.id, {
-                                isCompleted: !task.isCompleted,
-                              })
-                            }
-                            aria-label={`Odevzdáno: ${task.title}`}
-                            className="mt-1 h-4 w-4 rounded border-slate-300 text-[#003865] focus:ring-[#003865] cursor-pointer shrink-0"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p
-                              className={`text-sm font-medium ${
-                                task.isCompleted
-                                  ? 'text-slate-500 line-through'
-                                  : 'text-slate-900'
-                              }`}
-                            >
-                              {task.title}
-                            </p>
-                            {task.description && (
-                              <p className="text-xs text-slate-600 mt-0.5">
-                                {task.description}
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <input
+                              type="checkbox"
+                              checked={task.isCompleted}
+                              onChange={() =>
+                                onUpdateTask(task.id, {
+                                  isCompleted: !task.isCompleted,
+                                })
+                              }
+                              aria-label={`Odevzdáno: ${task.title}`}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-[#003865] focus:ring-[#003865] cursor-pointer shrink-0"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className={`text-sm font-medium ${
+                                  task.isCompleted
+                                    ? 'text-slate-500 line-through'
+                                    : 'text-slate-900'
+                                }`}
+                              >
+                                {task.title}
                               </p>
-                            )}
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
-                              <span>
-                                Stav:{' '}
-                                <strong
+                              {task.description && (
+                                <p className="text-xs text-slate-600 mt-0.5">
+                                  {task.description}
+                                </p>
+                              )}
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
+                                <span>
+                                  Stav:{' '}
+                                  <strong
+                                    className={
+                                      task.isCompleted
+                                        ? 'text-emerald-700 font-medium'
+                                        : 'text-amber-700 font-medium'
+                                    }
+                                  >
+                                    {task.isCompleted ? 'Odevzdáno' : 'K odevzdání'}
+                                  </strong>
+                                </span>
+                                <span aria-hidden="true">·</span>
+                                <span>
+                                  Termín:{' '}
+                                  <span className="font-mono tabular-nums text-slate-700">
+                                    {task.dueDate || 'Neurčeno'}
+                                  </span>
+                                </span>
+                                <span aria-hidden="true">·</span>
+                                <span
                                   className={
-                                    task.isCompleted
-                                      ? 'text-emerald-700 font-medium'
-                                      : 'text-amber-700 font-medium'
+                                    task.priority === 'Vysoká'
+                                      ? 'text-red-700 font-medium'
+                                      : 'text-slate-500'
                                   }
                                 >
-                                  {task.isCompleted ? 'Odevzdáno' : 'K odevzdání'}
-                                </strong>
-                              </span>
-                              <span aria-hidden="true">·</span>
-                              <span>
-                                Termín:{' '}
-                                <span className="font-mono tabular-nums text-slate-700">
-                                  {task.dueDate || 'Neurčeno'}
+                                  Priorita: {task.priority}
                                 </span>
-                              </span>
-                              <span aria-hidden="true">·</span>
-                              <span
-                                className={
-                                  task.priority === 'Vysoká'
-                                    ? 'text-red-700 font-medium'
-                                    : 'text-slate-500'
-                                }
-                              >
-                                Priorita: {task.priority}
-                              </span>
+                              </div>
                             </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => toggleTaskWorkNotes(task)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                                isWorkNotesOpen
+                                  ? 'bg-[#003865] text-white'
+                                  : hasWorkNotes
+                                  ? 'text-[#003865] bg-sky-50 hover:bg-sky-100'
+                                  : 'text-slate-600 bg-slate-100 hover:bg-slate-200'
+                              }`}
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>
+                                {hasWorkNotes
+                                  ? 'Poznámky k vypracování'
+                                  : '+ Poznámky k vypracování'}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => startEditTask(task)}
+                              title="Upravit úkol"
+                              className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteTask(task.id)}
+                              title="Smazat úkol"
+                              className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => startEditTask(task)}
-                            title="Upravit úkol"
-                            className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors"
+                        {isWorkNotesOpen && (
+                          <form
+                            onSubmit={(e) => handleSaveTaskWorkNotes(e, task)}
+                            className="pl-7 pt-2 space-y-2.5"
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteTask(task.id)}
-                            title="Smazat úkol"
-                            className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-slate-800">
+                                  Poznámky při vypracovávání úkolu: {task.title}
+                                </span>
+                                {taskWorkNotesSavedId === task.id && (
+                                  <span className="text-xs font-medium text-emerald-700">
+                                    · Poznámky uloženy
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenWorkNotesTaskId(null)}
+                                  className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-900"
+                                >
+                                  Skrýt
+                                </button>
+                                <button
+                                  type="submit"
+                                  className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-white bg-[#003865] rounded hover:bg-[#002848] whitespace-nowrap"
+                                >
+                                  <Save className="w-3.5 h-3.5" />
+                                  Uložit poznámky k úkolu
+                                </button>
+                              </div>
+                            </div>
+
+                            <RichNoteEditor
+                              value={taskWorkNotesDraft}
+                              onChange={setTaskWorkNotesDraft}
+                              placeholder="Pište si sem postup vypracování, osnovu, citace literatury nebo rozepsaný text úkolu..."
+                              minHeightClass="min-h-[160px]"
+                              maxLength={VALIDATION_LIMITS.TASK_WORK_NOTES_MAX}
+                            />
+                          </form>
+                        )}
                       </div>
                     );
                   })}

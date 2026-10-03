@@ -68,6 +68,7 @@ export interface CourseTask {
   title: string;
   dueDate: string;
   description: string;
+  workNotes?: string;
   priority: TaskPriority;
   isCompleted: boolean;
   createdAt?: unknown;
@@ -102,7 +103,8 @@ export const VALIDATION_LIMITS = {
   DATE_STR_MAX: 60,
   TIME_STR_MAX: 60,
   TASK_TITLE_MAX: 250,
-  TASK_DESC_MAX: 2000,
+  TASK_DESC_MAX: 5000,
+  TASK_WORK_NOTES_MAX: 20000,
   TOPIC_TITLE_MAX: 250,
   TOPIC_WEEK_MAX: 60,
   TOPIC_NOTES_MAX: 20000,
@@ -119,4 +121,12 @@ export function generateSafeId(prefix: string): string {
   const timePart = Date.now().toString(36);
   const raw = `${prefix}_${timePart}_${randomPart}`;
   return raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128);
+}
+
+export function stripHtmlToText(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }

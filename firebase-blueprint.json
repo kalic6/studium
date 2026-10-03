@@ -272,7 +272,13 @@
           "type": "string",
           "description": "Additional details or submission instructions.",
           "minLength": 0,
-          "maxLength": 2000
+          "maxLength": 5000
+        },
+        "workNotes": {
+          "type": "string",
+          "description": "Formatted working notes and progress draft while completing the task.",
+          "minLength": 0,
+          "maxLength": 20000
         },
         "priority": {
           "type": "string",

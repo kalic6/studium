@@ -120,7 +120,7 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'ownerId', 'semesterId', 'courseId', 'title', 'dueDate',
-          'description', 'priority', 'isCompleted', 'createdAt', 'updatedAt'
+          'description', 'workNotes', 'priority', 'isCompleted', 'createdAt', 'updatedAt'
         ]) &&
         data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
         data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
@@ -131,7 +131,8 @@ service cloud.firestore {
         data.courseId.matches('^[a-zA-Z0-9_\\-]+$') &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 250 &&
         data.dueDate is string && data.dueDate.size() <= 60 &&
-        data.description is string && data.description.size() <= 2000 &&
+        data.description is string && data.description.size() <= 5000 &&
+        (!('workNotes' in data) || (data.workNotes is string && data.workNotes.size() <= 20000)) &&
         data.priority is string && data.priority.size() >= 1 && data.priority.size() <= 30 &&
         data.priority in ['Nízká', 'Střední', 'Vysoká'] &&
         data.isCompleted is bool &&
@@ -289,9 +290,11 @@ service cloud.firestore {
         incoming().updatedAt == request.time && (
           // Action: Toggle task submission checkbox
           incoming().diff(existing()).affectedKeys().hasOnly(['isCompleted', 'updatedAt']) ||
-          // Action: Edit task details
+          // Action: Save working notes on task
+          incoming().diff(existing()).affectedKeys().hasOnly(['workNotes', 'updatedAt']) ||
+          // Action: Edit task details and working notes
           incoming().diff(existing()).affectedKeys().hasOnly([
-            'title', 'dueDate', 'description', 'priority', 'isCompleted', 'updatedAt'
+            'title', 'dueDate', 'description', 'workNotes', 'priority', 'isCompleted', 'updatedAt'
           ])
         );
 
